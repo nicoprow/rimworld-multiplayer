@@ -32,6 +32,13 @@ Keep deterministic lockstep. Rollback and state syncing are ruled out (see resea
 ### Git
 - Commit directly on `master`. Don't create feature branches for this work.
 
+### Delegating implementation
+- Delegate larger, self-contained implementation work to the `implementer` agent (`.claude/agents/implementer.md`, runs on Sonnet). Do small changes and anything that can affect determinism, tick pacing, command ordering or the network protocol directly.
+- Give it a brief that settles the decisions: files to touch, names of new types and members, behaviour, edge cases, and how it's verified. Don't leave design choices to it.
+- Run one implementer at a time on `master`. Only run them in parallel when their work touches completely separate files.
+- Review its diff for correctness, determinism and the code style rules, and build it yourself. Send corrections back to the same agent instead of starting a new one.
+- The lead agent commits and updates the task file. The implementer never does either.
+
 ### Code style
 - Never write comments in code.
 - Express intent through descriptive names for functions, variables, types and parameters.
