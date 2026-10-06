@@ -29,6 +29,9 @@ Keep deterministic lockstep. Rollback and state syncing are ruled out (see resea
 - Never keep a log or history in it. No "changelog", "previously", or dated entries. Git commits are the history.
 - When research answers a question, replace the question with the answer. Remove what no longer applies.
 
+### Git
+- Commit directly on `master`. Don't create feature branches for this work.
+
 ### Code style
 - Never write comments in code.
 - Express intent through descriptive names for functions, variables, types and parameters.
