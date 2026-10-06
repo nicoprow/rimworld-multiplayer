@@ -71,6 +71,6 @@ Goal: keep gameplay smooth at up to 500 ms ping, with packet loss and jitter, an
 
 ## Testing a bad network
 
-- LiteNetLib appears to have built-in network simulation (`SimulatePacketLoss`, `SimulateLatency`), but it is unconfirmed whether the 1.3.1 build used here includes it.
-- For Steam connections, an external tool such as clumsy (Windows) is needed, because LiteNetLib's simulation doesn't apply to them.
+- LiteNetLib's built-in network simulation (`SimulatePacketLoss`, `SimulateLatency`) is removed from the NuGet release build because of `[Conditional("DEBUG")]`. Use a small UDP relay that adds delay, jitter and loss instead (see task 1).
+- For Steam connections, use clumsy (Windows) on a second machine. It's imprecise and has no real jitter, but it's enough for checks.
 - Reference test condition: 500 ms ±100 ms jitter with 5% loss. Metrics to log: buffer depth, stall count, stall length and catch-up bursts.

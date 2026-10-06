@@ -13,19 +13,38 @@ Status values: `todo`, `research`, `in progress`, `done`, `dropped`.
 **Goal:** a repeatable bad-network setup (reference: 500 ms ±100 ms jitter, 5% loss), plus measurements of every later change against it.
 
 **Work:**
-- Turn on simulated loss and latency for LiteNetLib connections from a debug setting.
+- Dev setup: link the repo into the RimWorld `Mods` folder (directory junction), and disable the Workshop version of the mod if it's subscribed.
+- Write a small UDP relay as a dev tool, e.g. a console project `Source/NetworkConditioner`. The client connects to the relay, which forwards to the server and applies per-packet delay with jitter, loss (random and bursty) and a fixed seed, separately for each direction.
 - Collect metrics on each client:
-  - command buffer depth over time (`tickUntil - Timer`)
+  - command buffer depth over time (`tickUntil - Timer`). `PerformanceRecorder` already samples this as "timer lag" and reports average, min and max.
   - stall count and duration (time spent with `Timer >= tickUntil`)
   - ticks run per frame, to show catch-up bursts
   - how long it takes from issuing a command until it runs locally
-- Make the metrics visible in-game (debug overlay) and/or save them to a file.
+- Add the new metrics to `PerformanceRecorder` (file output) and a new section in `SyncDebugPanel` (live view). Add percentiles (p95, p99), since averages hide stalls.
 
-**Research needed:**
-- Check whether LiteNetLib 1.3.1 from NuGet includes `SimulatePacketLoss` / `SimulateLatency`, or whether they are compiled out (`#if DEBUG || SIMULATE_NETWORK`).
-- How to run host and client on one machine. Check for existing dev tooling such as a second instance or a standalone server project (`Source/Server`).
-- How to test Steam connections under bad conditions (clumsy, or a second machine).
-- Which existing debug UI in the mod the metrics can hook into.
+**Findings:**
+- **LiteNetLib simulation doesn't work in our build.**
+  - In 1.3.1, `SimulatePacketLoss`, `SimulateLatency` and the related fields are public and can be set.
+  - However, the methods that apply them (`HandleSimulateLatency`, `HandleSimulatePacketLoss`, `ProcessDelayedPackets`) are marked `[Conditional("DEBUG")]`. The NuGet DLL is a release build, so the compiler removed every call to them, which I confirmed by scanning the IL. Setting the flags has no effect and gives no error.
+  - The simulation would also only act on received packets, and its latency is a uniform random value between min and max.
+- **`PacketLayerBase` (an optional constructor argument of `NetManager`) is not enough on its own.** It can drop packets: an inbound length of 0 discards the packet. It can't delay them, because processing is synchronous and there's no way to put a packet back in later.
+- **Loss can't be simulated above LiteNetLib.** Dropping messages in `LiteNetConnection` after the reliable layer has acknowledged them loses data instead of triggering a resend. It has to happen at the UDP level, so the plan is the relay.
+- **clumsy** (WinDivert) only works for rough checks. Its lag is fixed per packet with no jitter (only reordering), and it is deliberately imprecise. On loopback each packet is processed twice, so a 500 ms setting gives about 1000 ms.
+- **Running host and client on one machine:**
+  - The mod already starts a second RimWorld process for the Arbiter (`HostUtil.StartArbiter`), so several instances can run at the same time.
+  - Useful command-line arguments for a second instance:
+    - `-connect=127.0.0.1:<port>`: joins automatically on startup (`AutoJoinHandler`)
+    - `-username=<name>`
+    - `-savedatafolder=<dir>`: separate config and saves, so the two instances don't share mod settings
+    - `-mphostreplay=<file>`: opens hosting for a save automatically
+  - Tested: two windowed instances run side by side, and both keep simulating when not focused. In Windows PowerShell 5.1, quote the arguments (`"-connect=127.0.0.1:30502"`). Unquoted, PowerShell splits `-connect=127.0.0.1` at the first dot and the auto-join fails.
+  - `Source/Server` is a headless .NET 8 standalone server. It reads `settings.toml` and `save.zip`, and supports neither Steam nor the Arbiter. It can be the host so both game instances are equal clients, but it adds bootstrap steps. Host in-game first.
+  - `Source/Tests/ServerTest.cs` connects LiteNetLib clients to an in-process server. This is useful for automated tests of the packet layer without RimWorld.
+- **Steam:** you can't test this on one machine. Two instances share one Steam account and SteamID. It needs a second machine or VM with a second Steam account, plus clumsy on one side. clumsy is enough here because the Steam path is secondary.
+- **Debug UI:**
+  - `SyncDebugPanel` (`Source/Client/UI/DebugPanel`) is the live overlay, built from collapsible `DebugSection`s. It only appears in a Debug build of the mod (`MpVersion.IsDebug`) with dev mode on and "Show debug info" enabled in the mod settings.
+  - `PerformanceRecorder` is called every frame from `OnMainThread`, and writes `MpPerf-*.txt` to `Multiplayer.LogsDir`.
+  - `dotnet build` defaults to Debug and copies the output to the repo root (`ModOutputPath`), which is the mod folder.
 
 ---
 
