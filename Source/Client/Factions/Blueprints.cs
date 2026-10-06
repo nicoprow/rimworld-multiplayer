@@ -15,9 +15,25 @@ namespace Multiplayer.Client
     // Don't draw other factions' blueprints
     // Don't link graphics of different factions' blueprints
 
-    [HarmonyPatch(typeof(GenConstruct), nameof(GenConstruct.CanPlaceBlueprintAt))]
+    static class CanPlaceBlueprintAtImplementation
+    {
+        const string NewTempMethodName = "CanPlaceBlueprintAt_NewTemp";
+
+        public static MethodBase Find()
+        {
+            var newTempImplementation = AccessTools.Method(typeof(GenConstruct), NewTempMethodName);
+            if (newTempImplementation != null)
+                return newTempImplementation;
+
+            return AccessTools.Method(typeof(GenConstruct), nameof(GenConstruct.CanPlaceBlueprintAt));
+        }
+    }
+
+    [HarmonyPatch]
     static class CanPlaceBlueprintAtPatch
     {
+        static MethodBase TargetMethod() => CanPlaceBlueprintAtImplementation.Find();
+
         static MethodInfo CanPlaceBlueprintOver = AccessTools.Method(typeof(GenConstruct), nameof(GenConstruct.CanPlaceBlueprintOver));
         public static MethodInfo ShouldIgnore1Method = AccessTools.Method(typeof(CanPlaceBlueprintAtPatch), nameof(ShouldIgnore1));
         public static MethodInfo ShouldIgnore2Method = AccessTools.Method(typeof(CanPlaceBlueprintAtPatch), nameof(ShouldIgnore2));
@@ -48,9 +64,11 @@ namespace Multiplayer.Client
         static bool ShouldIgnore1(Thing oldThing) => oldThing.def.IsBlueprint && oldThing.Faction != Faction.OfPlayer;
     }
 
-    [HarmonyPatch(typeof(GenConstruct), nameof(GenConstruct.CanPlaceBlueprintAt))]
+    [HarmonyPatch]
     static class CanPlaceBlueprintAtPatch2
     {
+        static MethodBase TargetMethod() => CanPlaceBlueprintAtImplementation.Find();
+
         static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> e, MethodBase original)
         {
             byte thingToIgnore_Ldarg_S = (byte) original.GetParameters().FirstIndexOf(p => p.Name == "thingToIgnore");
