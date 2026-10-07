@@ -24,6 +24,7 @@
 
     <ItemGroup>
       <ProjectReference Include="..\Common\Common.csproj" />
+      <ProjectReference Include="..\NetworkConditioner\NetworkConditioner.csproj" />
     </ItemGroup>
 
 </Project>
