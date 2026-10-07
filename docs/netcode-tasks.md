@@ -207,14 +207,16 @@ No lost, doubled or misordered commands, and no desync. Playing felt much smooth
   - `Designator_Place` (build, install): a blue ghost of the thing with the chosen rotation and stuff
   - designators without a designation (cancel and other removals): the faded designator icon on every thing that `CanDesignateThing` accepts and, for `Designator_Cancel`, on cells with cancelable cell designations
   - all other cell designators (zones, areas, plans): the cell outline
-  - drafting: setting `Pawn_DraftController.Drafted` from the interface records a `PendingValueOverride`. The draft button (`Command_Toggle` with the `Command_ColonistDraft` hotkey) shows the pending state, and a second click while it is pending toggles from the shown state. The colonist bar and the pawn's drawn pose still change only when the command runs.
+  - toggles that are sync methods (`PendingTogglePatches.cs`): a prefix on the setter records a `PendingValueOverride`, and a gizmo postfix wraps the `Command_Toggle` with `PendingToggleDisplay`. The button shows the pending state, and a second click while it is pending toggles from the shown state. Whether the button shows the value or its inverse is derived from the real state when the gizmo is created.
+    - drafting (`Pawn_DraftController.Drafted`, button with the `Command_ColonistDraft` hotkey). The colonist bar and the pawn's drawn pose still change only when the command runs.
+    - fire at will (`Pawn_DraftController.FireAtWill`, button with the `TexCommand.FireAtWill` icon)
+    - forbidding (`CompForbiddable.Forbidden`, button with the `Command_ItemForbid` hotkey). `PendingForbiddenState` also adds or hides the forbidden mark on the map by adjusting the overlay types in a prefix on `OverlayDrawer.DrawOverlay`.
   - sync fields (`SyncFieldUtil`): unbuffered fields now also keep the sent value as a pending change, so watched UI shows it until the command runs, without the 200 ms delay of buffered fields. Pending values of both kinds expire 10 s after sending. The medicine and hostility buttons (`MedicalCareSelectButton`, `DrawResponseButton`) and the bill restriction dropdown (`Dialog_BillConfig`) are watched while drawn, since their dropdown options only watch the field when clicked. This covers medicine, self-tend, hostility response, prisoner and slave interaction, bill suspended and restrictions, auto home area and rebuild, faction reward toggles and the DLC settings that are sync fields.
   - drafted moves (`FloatMenuOptionProvider_DraftedMove.PawnGotoAction`) and every ordered job (`Pawn_JobTracker.TryTakeOrderedJob` and `TryTakeOrderedJobPrioritizedWork`, such as picking up, eating, equipping or rescuing): a line from the pawn to the target and a target highlight (`PawnTargetOverlay`). Sync methods are intercepted by a transpiler inside the method body, so a Harmony prefix on them runs before the command is sent.
 
 **Remaining work:**
 - Test in game with the relay: check every overlay type, and that nothing stays behind after its command ran.
 - Toggles that are sync methods still show the old state until the command runs. Each needs the same treatment as drafting: record the value in the setter's prefix and patch where it's displayed, not the getter. In suggested order:
-  - fire at will, forbid/unforbid (gizmo and the forbidden overlay on items)
   - Assign tab: food, apparel, drug and reading policy, allowed area
   - Work tab priorities, Schedule tab time slots
   - Animals tab: master, training, follow drafted/fieldwork
