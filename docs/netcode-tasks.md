@@ -51,7 +51,7 @@ Status values: `todo`, `research`, `in progress`, `done`, `dropped`.
 Both runs are short, with fewer than 30 command samples each, so the P95 and P99 values are not reliable yet. Use runs of several minutes when comparing later changes.
 
 **Findings:**
-- **Command round trip under loss is far above the configured delay.** The minimum (503 ms) matches 2 × 250 ms, but the average is 2.3 times that and the maximum about 4 times. This fits retransmits on the reliable channel holding back every later reliable packet until the lost one is resent. Task 2 checks this in detail.
+- **Command round trip under loss is far above the configured delay.** The minimum (503 ms) matches 2 × 250 ms, but the average is 2.3 times that and the maximum about 4 times. The cause is LiteNetLib's resend delay of about 1.1 s at this RTT, together with all reliable traffic sharing one ordered stream (see task 2).
 - **Executing a command takes about 90 ms (5 ticks) longer than its round trip without the relay, and about 170 ms with it.** That is the time a command waits in the tick buffer.
 - **Clients run at most one timer tick per frame.** Outside replays and simulation, `TickPatch.Prefix` sets `ticksToRun = 1`. The 0.8× "speed up" therefore can't exceed the frame rate, and a client that has fallen behind catches up slowly instead of in bursts. Relevant for tasks 3 and 4.
 - **LiteNetLib simulation doesn't work in our build.**
@@ -81,7 +81,7 @@ Both runs are short, with fewer than 30 command samples each, so the P95 and P99
 
 ## 2. Separate channels and send commands redundantly
 
-**Status:** todo
+**Status:** research
 
 **Goal:** a single lost packet no longer stalls the command stream.
 
@@ -94,13 +94,28 @@ Both runs are short, with fewer than 30 command samples each, so the P95 and P99
 - Keep reliable delivery for bulk data, but on its own channel.
 - Raise disconnect timeouts so they survive several seconds of loss bursts.
 
-**Research needed:**
-- The full packet pipeline: `ConnectionBase`, `Packets.cs`, `FragmentedPacket`, and how `reliable` is chosen per packet type.
-- How the client currently makes sure it has every command for a tick before simulating it. Is `sentCmdsSnapshot` in `ServerTimeControlPacket` the gate?
-- LiteNetLib 1.3.1 channel API (`ChannelsCount`, channel number when sending), `ReliableUnordered` / `Sequenced` behaviour, MTU and fragmentation limits.
-- Steam: what the old `SteamNetworking` API can do (channels, send types), versus moving to `SteamNetworkingSockets`. Steam may need a separate task.
-- Largest realistic size of a single command, which determines the redundancy budget per packet.
-- Effect on protocol version and compatibility (`MpVersion`, protocol packet).
+**Findings:**
+- **One ordered stream carries all reliable traffic.** `ConnectionBase.Send` takes only a `reliable` flag. `LiteNetConnection.SendRaw` maps it to `ReliableOrdered` or `Unreliable`, always on channel 0, and the server's `NetManager`s use the default `ChannelsCount` of 1. A lost packet therefore holds back every reliable packet sent after it, whatever its type.
+- **Heavy periodic traffic shares that stream with commands:**
+  - Client to server: `ClientFrameTimePacket` is sent reliable about 30 times a second (`TickPatch`, every 32 ms). With 2.5% loss, roughly one of these is lost every 1.3 seconds and blocks the client's own commands behind it.
+  - Server to client: every 30 ticks the host's sync opinion is forwarded to each other client as a reliable packet fragmented by our own code (1 KB parts, `ServerPlayingState.HandleDesyncCheck`). Also reliable: player latencies once a second, selections, pings, chat, freeze, player list.
+  - Unreliable today: time control (`Server_TimeControl`), keep-alives in both directions, cursors.
+- **LiteNetLib resends late on slow links.** In 1.3.1 the resend delay is `25 ms + 2.1 × average RTT` (`NetPeer.UpdateRoundTripTime`). At 500 ms RTT that is about 1.1 s before the first resend, plus another half RTT for the resent packet to arrive. A lost ping counts as an RTT sample of about 1000 ms (the ping interval), which pushes the delay higher. This matches the baseline: the shortest round trip was 503 ms, the average 1176 ms and the longest 2065 ms (a packet lost twice).
+- **The window can fill up.** Each reliable channel allows 64 packets that haven't been acknowledged yet. While a lost packet waits for its resend (about 1.6–2 s at 500 ms RTT), the 30 frame-time packets a second alone use 48–60 of those 64 slots. Anything beyond waits in the send queue.
+- **The client's tick gate is `sentCmdsSnapshot`.** The server stamps each command with its current `gameTimer`, and with each timer increase it stores `sentCmdsSnapshot = commands.SentCmds`. The client takes the `tickUntil` from `ServerTimeControlPacket` only if `receivedCmds >= remoteSentCmds` (`MultiplayerSession.ProcessTimeControl`). A server command stuck behind a lost packet freezes `tickUntil` until it arrives, which is the stall in the baseline. A client command stuck on the way to the server only delays that command.
+- **LiteNetLib channels** (1.3.1):
+  - Each pair of (channel number, delivery method) is its own independent stream, and the channel index is `channelNumber × 4 + deliveryMethod`. `Unreliable` has no channel. So `ReliableOrdered` and `ReliableUnordered` on channel 0 already don't block each other.
+  - `ChannelsCount` (1–64) must be equal on both sides. Packets for a channel number the receiver doesn't have are dropped without an error.
+  - `Sequenced` delivers only the newest packet and drops older ones. `ReliableSequenced` resends only the last packet.
+  - Only `ReliableOrdered` and `ReliableUnordered` can be fragmented. A larger `Unreliable` or `Sequenced` packet throws `TooBigPacketException`. The MTU starts at 1164 bytes (1232 − 68) and is raised by MTU discovery up to 1432. The header for unreliable packets is 1 byte.
+  - `DisconnectTimeout` is the default 5000 ms; we don't set it.
+- **Our own fragmentation allows only one fragmented packet at a time per connection** (`ConnectionBase.MaxFragmentedPackets = 1`, more throws `PacketReadException`). This works today only because everything arrives in one ordered stream. With more than one channel, two fragmented packets (for example world data and a sync opinion) would interleave, so fragment state has to be kept per channel.
+- **Steam** uses the old `SteamNetworking` P2P API. It already uses the channel number to tell connections apart (each client picks a random receive channel), sends reliable or unreliable, and allows about 1200 bytes per unreliable packet. Separate reliable channels would need more channel numbers per connection. Redundant commands in unreliable packets don't depend on channels, so they help Steam too.
+- **Protocol:** `MpVersion.Protocol` is 54. Any of these changes needs a bump. Client and server must have the same version, so old clients can't connect.
+
+**Open questions:**
+- How big commands and sync opinions are in practice. This sets how many unacknowledged commands fit in one unreliable packet. Measure in a real game.
+- How the join flow sets the starting command sequence. A joining client currently sets `receivedCmds = remoteSentCmds` once its world data is loaded (`ClientLoadingState`).
 
 ---
 
