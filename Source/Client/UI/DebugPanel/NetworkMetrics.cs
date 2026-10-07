@@ -62,7 +62,7 @@ internal static class NetworkMetrics
     {
         double now = NowMs;
         RemoveSentCommandsOlderThan(now - UnmatchedCommandExpiryMs);
-        sentCommandsAwaitingServer.AddLast(new SentCommand(type, mapId, data, now));
+        sentCommandsAwaitingServer.AddLast(new SentCommand(new OwnCommandSignature(type, mapId, data), now));
     }
 
     public static void RecordCommandReceived(ScheduledCommand cmd)
@@ -130,7 +130,7 @@ internal static class NetworkMetrics
         var candidate = sentCommandsAwaitingServer.First;
         while (candidate != null)
         {
-            if (candidate.Value.Matches(cmd))
+            if (candidate.Value.signature.Matches(cmd))
             {
                 double sentAtMs = candidate.Value.sentAtMs;
                 RemoveAllUpTo(candidate);
@@ -172,22 +172,13 @@ internal static class NetworkMetrics
 
     private sealed class SentCommand
     {
-        public readonly CommandType type;
-        public readonly int mapId;
-        public readonly byte[] data;
+        public readonly OwnCommandSignature signature;
         public readonly double sentAtMs;
 
-        public SentCommand(CommandType type, int mapId, byte[] data, double sentAtMs)
+        public SentCommand(OwnCommandSignature signature, double sentAtMs)
         {
-            this.type = type;
-            this.mapId = mapId;
-            this.data = data ?? Array.Empty<byte>();
+            this.signature = signature;
             this.sentAtMs = sentAtMs;
         }
-
-        public bool Matches(ScheduledCommand cmd) =>
-            cmd.type == type &&
-            cmd.mapId == mapId &&
-            (cmd.data ?? Array.Empty<byte>()).SequenceEqual(data);
     }
 }

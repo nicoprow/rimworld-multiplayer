@@ -86,6 +86,7 @@ namespace Multiplayer.Client
             }
 
             NetworkMetrics.RecordCommandSent(type, mapId, data);
+            PendingOrderRegistry.Notify_OwnCommandSent(type, mapId, data);
             Multiplayer.session.SendOwnCommand(type, mapId, data);
         }
 

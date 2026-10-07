@@ -196,6 +196,7 @@ namespace Multiplayer.Client
                     else
                     {
                         NetworkMetrics.RecordCommandExecuted(cmd);
+                        PendingOrderRegistry.Notify_CommandExecuted(cmd);
                         target.ExecuteCmd(cmd);
                     }
 
@@ -327,6 +328,7 @@ namespace Multiplayer.Client
             realTime = 0;
             TimeControlPatch.prePauseTimeSpeed = null;
             NetworkMetrics.Reset();
+            PendingOrderRegistry.Reset();
         }
 
         public static void SetTimer(int value) => Timer = value;

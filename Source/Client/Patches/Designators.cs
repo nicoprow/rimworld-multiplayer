@@ -36,7 +36,8 @@ namespace Multiplayer.Client
             WriteData(writer, DesignatorMode.SingleCell, designator);
             SyncSerialization.WriteSync(writer, __0);
 
-            SendSyncCommand(map.uniqueID, writer);
+            IntVec3 designatedCell = __0;
+            SendSyncCommand(map.uniqueID, writer, () => PendingDesignatorOverlays.ForCells(designator, map, [designatedCell]));
             Multiplayer.WriterLog.AddCurrentNode(writer);
 
             return false;
@@ -62,7 +63,7 @@ namespace Multiplayer.Client
             if (__instance is Designator_Plan_Add addDesignator)
                 SyncSerialization.WriteSync(writer, addDesignator.colorDef);
 
-            SendSyncCommand(map.uniqueID, writer);
+            SendSyncCommand(map.uniqueID, writer, () => PendingDesignatorOverlays.ForCells(designator, map, cellArray));
             Multiplayer.WriterLog.AddCurrentNode(writer);
 
             return false;
@@ -81,7 +82,8 @@ namespace Multiplayer.Client
             WriteData(writer, DesignatorMode.Thing, designator);
             SyncSerialization.WriteSync(writer, __0);
 
-            SendSyncCommand(map.uniqueID, writer);
+            Thing designatedThing = __0;
+            SendSyncCommand(map.uniqueID, writer, () => PendingDesignatorOverlays.ForThing(designator, map, designatedThing));
             Multiplayer.WriterLog.AddCurrentNode(writer);
 
             FleckMaker.ThrowMetaPuffs(__0);
@@ -89,10 +91,32 @@ namespace Multiplayer.Client
             return false;
         }
 
-        private static void SendSyncCommand(int mapId, ByteWriter data)
+        private static void SendSyncCommand(int mapId, ByteWriter data, Func<PendingOrderOverlay> createPendingOverlay)
         {
-            if (!Multiplayer.GhostMode)
+            if (Multiplayer.GhostMode) return;
+
+            PendingOrderRegistry.AttachToNextOwnCommand(TryCreatePendingOverlay(createPendingOverlay));
+            try
+            {
                 Multiplayer.Client.SendCommand(CommandType.Designator, mapId, data.ToArray());
+            }
+            finally
+            {
+                PendingOrderRegistry.StopAttaching();
+            }
+        }
+
+        private static PendingOrderOverlay TryCreatePendingOverlay(Func<PendingOrderOverlay> createPendingOverlay)
+        {
+            try
+            {
+                return createPendingOverlay();
+            }
+            catch (Exception e)
+            {
+                MpLog.Warn($"Couldn't create the pending order overlay for a designator: {e}");
+                return null;
+            }
         }
 
         // DesignateFinalizer ignores unimplemented Designate* methods
