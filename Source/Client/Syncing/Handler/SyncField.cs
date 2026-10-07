@@ -108,11 +108,14 @@ namespace Multiplayer.Client
             if (!(inGameLoop || Multiplayer.ShouldSync))
                 return;
 
+            if (SyncFieldUtil.IsWatchedInOpenScope(this, target, index))
+                return;
+
             object value;
 
-            if (bufferChanges && SyncFieldUtil.bufferedChanges[this].TryGetValue(new(target, index), out BufferData cached))
+            if (SyncFieldUtil.TryGetPendingValue(this, target, index, out object pendingValue))
             {
-                value = cached.toSend;
+                value = pendingValue;
                 target.SetPropertyOrField(memberPath, value, index);
             }
             else

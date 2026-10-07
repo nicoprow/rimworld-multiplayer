@@ -9,6 +9,8 @@ namespace Multiplayer.Client
 {
     public static class SyncFieldUtil
     {
+        public const long PendingValueExpiryMillis = (long)(PendingOrderRegistry.ExpiryAfterSendSeconds * 1000);
+
         public static Dictionary<SyncField, Dictionary<BufferTarget, BufferData>> bufferedChanges = new();
         private static Stack<FieldData?> watchedStack = new();
 
@@ -34,18 +36,14 @@ namespace Multiplayer.Client
                 SyncField handler = data.handler;
                 object newValue = MpReflection.GetValue(data.target, handler.memberPath, data.index);
                 bool changed = !ValuesEqual(handler, newValue, data.oldValue);
-                var cache =
-                    handler.bufferChanges && !Multiplayer.IsReplay && !Multiplayer.GhostMode
-                        ? bufferedChanges.GetValueSafe(handler)
-                        : null;
+                var cache = PendingChangesShownFor(handler);
                 var bufferTarget = new BufferTarget(data.target, data.index);
                 var cachedData = cache?.GetValueSafe(bufferTarget);
 
                 // Revert the local field's value for simulation purposes.
-                // For unbuffered fields, this rollback is only necessary if the value actually changed.
-                // For buffered fields, however, we always perform the restore, since the value is overwritten
-                // whenever watching it begins — assuming the value was previously changed and thus the buffer was
-                // initialized.
+                // Without a pending change, this rollback is only necessary if the value actually changed.
+                // With a pending change, however, we always perform the restore, since the pending value is written
+                // into the field whenever watching it begins.
                 // If any change has happened, we record it and either send it immediately (unbuffered field) or queue
                 // it (buffered field). The server will eventually acknowledge the change and send it back, at which
                 // point the field is updated.
@@ -59,10 +57,17 @@ namespace Multiplayer.Client
                 if (!changed)
                     continue;
 
-                // For unbuffered fields, just immediately sync any changes.
                 if (cache == null)
                 {
                     handler.DoSyncCatch(data.target, newValue, data.index);
+                    continue;
+                }
+
+                if (!handler.bufferChanges)
+                {
+                    bool commandSent = handler.DoSyncCatch(data.target, newValue, data.index);
+                    if (commandSent)
+                        ShowSentValueUntilExecuted(cache, bufferTarget, cachedData, handler, data.oldValue, newValue);
                     continue;
                 }
 
@@ -80,6 +85,67 @@ namespace Multiplayer.Client
             }
         }
 
+        private static Dictionary<BufferTarget, BufferData> PendingChangesShownFor(SyncField field)
+        {
+            if (field.inGameLoop || Multiplayer.IsReplay || Multiplayer.GhostMode)
+                return null;
+
+            if (!bufferedChanges.TryGetValue(field, out var pendingChanges))
+            {
+                pendingChanges = new();
+                bufferedChanges[field] = pendingChanges;
+            }
+
+            return pendingChanges;
+        }
+
+        private static void ShowSentValueUntilExecuted(Dictionary<BufferTarget, BufferData> cache, BufferTarget bufferTarget,
+            BufferData existingPendingChange, SyncField field, object valueBeforeChange, object sentValue)
+        {
+            var sentValueSnapshot = SnapshotValueIfNeeded(field, sentValue);
+
+            if (existingPendingChange != null)
+            {
+                existingPendingChange.toSend = sentValueSnapshot;
+                existingPendingChange.MarkSent();
+                return;
+            }
+
+            var pendingChange = new BufferData(field, valueBeforeChange, sentValueSnapshot);
+            pendingChange.MarkSent();
+            cache[bufferTarget] = pendingChange;
+        }
+
+        public static bool TryGetPendingValue(SyncField field, object target, object index, out object pendingValue)
+        {
+            if (bufferedChanges.TryGetValue(field, out var pendingChanges) &&
+                pendingChanges.TryGetValue(new BufferTarget(target, index), out var pendingChange))
+            {
+                pendingValue = pendingChange.toSend;
+                return true;
+            }
+
+            pendingValue = null;
+            return false;
+        }
+
+        public static bool IsWatchedInOpenScope(SyncField field, object target, object index)
+        {
+            var watchedTarget = new BufferTarget(target, index);
+
+            foreach (var watchedOrMarker in watchedStack)
+            {
+                if (watchedOrMarker is not { } watched) continue;
+
+                bool sameField = watched.handler == field;
+                bool sameTarget = watchedTarget.Equals(new BufferTarget(watched.target, watched.index));
+                if (sameField && sameTarget)
+                    return true;
+            }
+
+            return false;
+        }
+
         public static void UpdateSync()
         {
             foreach (var (field, fieldBufferedChanges) in bufferedChanges)
@@ -95,13 +161,16 @@ namespace Multiplayer.Client
                 return true;
 
             var millisNow = Utils.MillisNow;
+            if (data.sent && millisNow - data.sentAtMillis > PendingValueExpiryMillis)
+                return true;
+
             if (!data.sent && millisNow - data.lastChangedAtMillis > 200)
             {
                 // If syncing fails with an exception don't try to reattempt and just give up.
                 if (data.field.DoSyncCatch(target.target, data.toSend, target.index) is false)
                     return true;
 
-                data.sent = true;
+                data.MarkSent();
             }
 
             return false;
@@ -182,8 +251,8 @@ namespace Multiplayer.Client
         public readonly SyncField handler;
         public readonly object target;
         /// Reflects the value the field had before the most recent GUI update.
-        /// For unbuffered fields, this is also the current simulation value.
-        /// For buffered fields, which may modify the field across multiple `Watch` calls,
+        /// Without a pending change, this is also the current simulation value.
+        /// With a pending change, which `Watch` writes into the field,
         /// this represents the value at the start of the latest `Watch` invocation.
         public readonly object oldValue;
         public readonly object index;
@@ -222,12 +291,19 @@ namespace Multiplayer.Client
     public class BufferData(SyncField field, object actualValue, object toSend)
     {
         public SyncField field = field;
-        /// This is the real field's value. If this were an unbuffered field, it'd be equivalent to `FieldData.oldValue`,
-        /// however for buffered fields `oldValue` reflects the value prior to the last GUI update. Use this field to
+        /// This is the real field's value. `FieldData.oldValue` instead reflects the pending value written into the
+        /// field at the start of the last GUI update. Use this field to
         /// access the original value before any user interaction occurred.
         public object actualValue = actualValue;
         public object toSend = toSend;
         public long lastChangedAtMillis = Utils.MillisNow;
+        public long sentAtMillis;
         public bool sent;
+
+        public void MarkSent()
+        {
+            sent = true;
+            sentAtMillis = Utils.MillisNow;
+        }
     }
 }

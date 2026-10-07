@@ -325,6 +325,20 @@ namespace Multiplayer.Client
             return WatchDropdowns(() => SyncMedCare.Watch(p), __result);
         }
 
+        [MpPrefix(typeof(MedicalCareUtility), nameof(MedicalCareUtility.MedicalCareSelectButton))]
+        static void ShowPendingMedicalCareOnButton(Pawn pawn)
+        {
+            if (pawn.playerSettings != null)
+                SyncMedCare.Watch(pawn);
+        }
+
+        [MpPrefix(typeof(HostilityResponseModeUtility), nameof(HostilityResponseModeUtility.DrawResponseButton))]
+        static void ShowPendingHostilityResponseOnButton(Pawn pawn)
+        {
+            if (pawn.playerSettings != null)
+                SyncHostilityResponse.Watch(pawn);
+        }
+
         [MpPrefix(typeof(TrainingCardUtility), nameof(TrainingCardUtility.DrawTrainingCard))]
         static void PawnSettingFollowWatch(Pawn pawn)
         {
@@ -402,6 +416,11 @@ namespace Multiplayer.Client
             SyncIngredientSearchRadius.Watch(bill);
 
             SyncBillProduction.Watch(bill);
+
+            SyncBillPawnRestriction.Watch(bill);
+            SyncBillSlavesOnly.Watch(bill);
+            SyncBillMechsOnly.Watch(bill);
+            SyncBillNonMechsOnly.Watch(bill);
 
             if (bill.recipe.ProducedThingDef != null)
             {
