@@ -36,6 +36,8 @@ $conditionerProject = Join-Path $repositoryRoot "Source\NetworkConditioner\Netwo
 $mainDataFolder = Join-Path $env:USERPROFILE "AppData\LocalLow\Ludeon Studios\RimWorld by Ludeon Studios"
 $mainConfigFolder = Join-Path $mainDataFolder "Config"
 $multiplayerSavesFolder = Join-Path $mainDataFolder "MpReplays"
+$hostLogFile = Join-Path $mainDataFolder "Player-Host.log"
+$clientLogFile = Join-Path $ClientDataFolder "Player.log"
 
 function Format-Invariant([double]$value) {
     return $value.ToString([System.Globalization.CultureInfo]::InvariantCulture)
@@ -153,7 +155,7 @@ function Move-WindowToHalfScreen([System.Diagnostics.Process]$process, [string]$
 }
 
 function Start-HostInstance {
-    $hostArguments = @('"-username=Host"') + (Get-WindowedLaunchArguments "Left")
+    $hostArguments = @('"-username=Host"', "-logFile", "`"$hostLogFile`"") + (Get-WindowedLaunchArguments "Left")
     if ($HostSave -ne "") {
         $hostSavePath = Resolve-HostSavePath
         $hostArguments += "`"-mphostreplay=$hostSavePath`""
@@ -195,6 +197,7 @@ function Start-ClientInstance {
 
     $connectPort = if ($NoRelay) { $HostPort } else { $RelayPort }
     $clientArguments = @(
+        "-logFile", "`"$clientLogFile`"",
         "`"-username=$ClientUsername`"",
         "`"-savedatafolder=$ClientDataFolder`""
     ) + (Get-WindowedLaunchArguments "Right")
