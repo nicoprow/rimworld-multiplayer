@@ -11,6 +11,7 @@ using System.Text.RegularExpressions;
 using System.Xml;
 using HarmonyLib;
 using Ionic.Crc;
+using Multiplayer.Client.DebugUi;
 using Multiplayer.Common;
 using Multiplayer.Common.Networking.Packet;
 using RimWorld;
@@ -75,8 +76,14 @@ namespace Multiplayer.Client
             return null;
         }
 
-        public static void SendCommand(this ConnectionBase conn, CommandType type, int mapId, byte[] data) =>
+        public static void SendCommand(this ConnectionBase conn, CommandType type, int mapId, byte[] data)
+        {
+            bool isLiveSessionConnection = conn == Multiplayer.Client && !Multiplayer.IsReplay;
+            if (isLiveSessionConnection)
+                NetworkMetrics.RecordCommandSent(type, mapId, data);
+
             conn.Send(new ClientCommandPacket(type, mapId, data));
+        }
 
         public static void SendCommand(this ConnectionBase conn, CommandType type, int mapId, params object[] data) =>
             SendCommand(conn, type, mapId, ByteWriter.GetBytes(data));

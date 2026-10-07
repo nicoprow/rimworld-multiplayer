@@ -5,6 +5,7 @@ using System.Linq;
 using HarmonyLib;
 using LudeonTK;
 using Multiplayer.Client.AsyncTime;
+using Multiplayer.Client.DebugUi;
 using Multiplayer.Common;
 using Multiplayer.Common.Networking.Packet;
 using RimWorld.Planet;
@@ -64,10 +65,16 @@ namespace Multiplayer.Client
         static bool Prefix()
         {
             if (Multiplayer.Client == null) return true;
-            if (!ShouldHandle) return false;
-            if (Frozen) return false;
+            if (!ShouldHandle || Frozen)
+            {
+                NetworkMetrics.InterruptStall();
+                return false;
+            }
 
             int ticksBehind = tickUntil - Timer;
+            int timerAtFrameStart = Timer;
+            bool waitingForServerAtFrameStart = Timer >= tickUntil;
+            bool measuresLiveNetworkPlay = !Simulating && !Multiplayer.IsReplay;
             realTime += Time.deltaTime * 1000f;
 
             // Slow down when few ticksBehind to accumulate a buffer
@@ -121,6 +128,11 @@ namespace Multiplayer.Client
                 SimpleProfiler.Pause();
 
             CheckFinishSimulating();
+
+            if (measuresLiveNetworkPlay)
+                NetworkMetrics.RecordTickFrame(ticksBehind, Timer - timerAtFrameStart, waitingForServerAtFrameStart);
+            else
+                NetworkMetrics.InterruptStall();
 
             return false;
         }
@@ -180,7 +192,12 @@ namespace Multiplayer.Client
                     if (target == null)
                     {
                         Log.Error($"!!! Tickable of {cmd.mapId} not found! {cmd}");
-                    } else target.ExecuteCmd(cmd);
+                    }
+                    else
+                    {
+                        NetworkMetrics.RecordCommandExecuted(cmd);
+                        target.ExecuteCmd(cmd);
+                    }
 
                     if (LongEventHandler.eventQueue.Count > 0) return true; // Yield to e.g. join-point creation
                 }
@@ -309,6 +326,7 @@ namespace Multiplayer.Client
             avgFrameTime = StandardTimePerFrame;
             realTime = 0;
             TimeControlPatch.prePauseTimeSpeed = null;
+            NetworkMetrics.Reset();
         }
 
         public static void SetTimer(int value) => Timer = value;

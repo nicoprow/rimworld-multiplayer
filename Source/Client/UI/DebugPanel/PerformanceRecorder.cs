@@ -44,6 +44,10 @@ public static class PerformanceRecorder
     private static CircularBuffer<int> bufferedChangesSamples;
     private static CircularBuffer<int> mapCmdsSamples;
     private static CircularBuffer<int> worldCmdsSamples;
+    private static CircularBuffer<int> ticksPerFrameSamples;
+    private static CircularBuffer<float> stallDurationSamples;
+    private static CircularBuffer<float> commandRoundTripSamples;
+    private static CircularBuffer<float> commandLatencySamples;
 
     // Memory/GC metrics
     private static CircularBuffer<int> clientOpinionsSamples;
@@ -163,6 +167,7 @@ public static class PerformanceRecorder
         if (Multiplayer.Client != null)
         {
             timerLagSamples.Add(TickPatch.tickUntil - TickPatch.Timer);
+            ticksPerFrameSamples.Add(NetworkMetrics.LastFrameTicksRun);
 
             if (Find.CurrentMap?.AsyncTime() is AsyncTimeComp asyncComp)
             {
@@ -204,8 +209,18 @@ public static class PerformanceRecorder
         recordingFrameCount = 0;
         ClearSamples();
 
+        NetworkMetrics.StallEnded += RecordStallDuration;
+        NetworkMetrics.CommandRoundTripMeasured += RecordCommandRoundTrip;
+        NetworkMetrics.CommandLatencyMeasured += RecordCommandLatency;
+
         Verse.Log.Message("[PerformanceRecorder] Recording started");
     }
+
+    private static void RecordStallDuration(float durationMs) => stallDurationSamples.Add(durationMs);
+
+    private static void RecordCommandRoundTrip(float roundTripMs) => commandRoundTripSamples.Add(roundTripMs);
+
+    private static void RecordCommandLatency(float latencyMs) => commandLatencySamples.Add(latencyMs);
 
     /// <summary>
     /// Stops the current recording session and processes the recorded data.
@@ -218,6 +233,9 @@ public static class PerformanceRecorder
         if (!isRecording) return;
 
         isRecording = false;
+        NetworkMetrics.StallEnded -= RecordStallDuration;
+        NetworkMetrics.CommandRoundTripMeasured -= RecordCommandRoundTrip;
+        NetworkMetrics.CommandLatencyMeasured -= RecordCommandLatency;
         var recordingDuration = DateTime.Now - recordingStartTime;
 
         // Generate and output results
@@ -237,20 +255,23 @@ public static class PerformanceRecorder
 
     private static void AppendDetailedStats(StringBuilder sb, string name, StatResult stats)
     {
-        sb.AppendLine($"{name,-25} Avg: {stats.Average,8:F2}  Min: {stats.Min,8:F2}  Max: {stats.Max,8:F2}  Samples: {stats.Count,6:N0}");
+        sb.AppendLine($"{name,-25} Avg: {stats.Average,8:F2}  Min: {stats.Min,8:F2}  Max: {stats.Max,8:F2}  P95: {stats.P95,8:F2}  P99: {stats.P99,8:F2}  Samples: {stats.Count,6:N0}");
     }
 
     private static StatResult CalculateStats(IEnumerable<float> samples)
     {
         var list = samples.ToList();
         if (list.Count == 0)
-            return new StatResult { Average = 0, Min = 0, Max = 0, Count = 0 };
+            return new StatResult { Average = 0, Min = 0, Max = 0, P50 = 0, P95 = 0, P99 = 0, Count = 0 };
 
         return new StatResult
         {
             Average = list.Average(),
             Min = list.Min(),
             Max = list.Max(),
+            P50 = SampleStatistics.Percentile(list, 50),
+            P95 = SampleStatistics.Percentile(list, 95),
+            P99 = SampleStatistics.Percentile(list, 99),
             Count = list.Count
         };
     }
@@ -273,6 +294,10 @@ public static class PerformanceRecorder
         serverTPTSamples = new CircularBuffer<float>(maxSamples);
         timerLagSamples = new CircularBuffer<int>(maxSamples);
         mapCmdsSamples = new CircularBuffer<int>(maxSamples);
+        ticksPerFrameSamples = new CircularBuffer<int>(maxSamples);
+        stallDurationSamples = new CircularBuffer<float>(maxSamples);
+        commandRoundTripSamples = new CircularBuffer<float>(maxSamples);
+        commandLatencySamples = new CircularBuffer<float>(maxSamples);
 
         receivedCmdsSamples = new CircularBuffer<int>(nonPerfSamples);
         sentCmdsSamples = new CircularBuffer<int>(nonPerfSamples);
@@ -301,6 +326,10 @@ public static class PerformanceRecorder
         clientOpinionsSamples?.Clear();
         worldPawnsSamples?.Clear();
         windowCountSamples?.Clear();
+        ticksPerFrameSamples?.Clear();
+        stallDurationSamples?.Clear();
+        commandRoundTripSamples?.Clear();
+        commandLatencySamples?.Clear();
         lastNonPerfMetricsFrameCount = 0;
     }
 
@@ -370,6 +399,11 @@ public static class PerformanceRecorder
             BufferedChanges = CalculateStats(bufferedChangesSamples.GetValues()),
             MapCmds = CalculateStats(mapCmdsSamples.GetValues()),
             WorldCmds = CalculateStats(worldCmdsSamples.GetValues()),
+            TicksPerFrame = CalculateStats(ticksPerFrameSamples.GetValues()),
+            StallDuration = CalculateStats(stallDurationSamples.GetValues()),
+            CommandRoundTrip = CalculateStats(commandRoundTripSamples.GetValues()),
+            CommandLatency = CalculateStats(commandLatencySamples.GetValues()),
+            TotalStallTimeMs = stallDurationSamples.GetValues().Sum(),
 
             // Memory stats
             ClientOpinions = CalculateStats(clientOpinionsSamples.GetValues()),
@@ -410,6 +444,10 @@ public static class PerformanceRecorder
         sb.AppendLine($"  Received Cmds:  Avg {results.ReceivedCmds.Average:F0}     Min {results.ReceivedCmds.Min:F0}     Max {results.ReceivedCmds.Max:F0}");
         sb.AppendLine($"  Sent Cmds:      Avg {results.SentCmds.Average:F0}     Min {results.SentCmds.Min:F0}     Max {results.SentCmds.Max:F0}");
         sb.AppendLine($"  Buffered Changes: Avg {results.BufferedChanges.Average:F0}   Min {results.BufferedChanges.Min:F0}     Max {results.BufferedChanges.Max:F0}");
+        sb.AppendLine($"  Ticks Per Frame: Avg {results.TicksPerFrame.Average:F2}   Min {results.TicksPerFrame.Min:F0}     Max {results.TicksPerFrame.Max:F0}");
+        sb.AppendLine($"  Stalls:         Count {results.StallDuration.Count}   P95 {results.StallDuration.P95:F0}ms   Max {results.StallDuration.Max:F0}ms");
+        sb.AppendLine($"  Cmd Round Trip: P50 {results.CommandRoundTrip.P50:F0}ms   P95 {results.CommandRoundTrip.P95:F0}ms   P99 {results.CommandRoundTrip.P99:F0}ms");
+        sb.AppendLine($"  Cmd Latency:    P50 {results.CommandLatency.P50:F0}ms   P95 {results.CommandLatency.P95:F0}ms   P99 {results.CommandLatency.P99:F0}ms");
         sb.AppendLine($"  Map Commands:   Avg {results.MapCmds.Average:F0}     Min {results.MapCmds.Min:F0}     Max {results.MapCmds.Max:F0}");
         sb.AppendLine($"  World Commands: Avg {results.WorldCmds.Average:F0}     Min {results.WorldCmds.Min:F0}     Max {results.WorldCmds.Max:F0}");
         sb.AppendLine();
@@ -449,8 +487,21 @@ public static class PerformanceRecorder
             AppendDetailedStats(sb, "Ticks Per Second (Raw)", results.TPS);
             AppendDetailedStats(sb, "TPS Performance (%)", results.NormalizedTPS);
             AppendDetailedStats(sb, "Server Time Per Tick (ms)", results.ServerTPT);
-            AppendDetailedStats(sb, "Timer Lag", results.TimerLag);
+            sb.AppendLine();
 
+            sb.AppendLine("NETWORK CONDITIONS");
+            sb.AppendLine("------------------");
+            AppendDetailedStats(sb, "Timer Lag (ticks)", results.TimerLag);
+            AppendDetailedStats(sb, "Ticks Per Frame", results.TicksPerFrame);
+            AppendDetailedStats(sb, "Stall Duration (ms)", results.StallDuration);
+            AppendDetailedStats(sb, "Command Round Trip (ms)", results.CommandRoundTrip);
+            AppendDetailedStats(sb, "Command Latency (ms)", results.CommandLatency);
+            sb.AppendLine($"{"Stall Count",-25} {results.StallDuration.Count}");
+            sb.AppendLine($"{"Total Stall Time",-25} {results.TotalStallTimeMs / 1000f:F2}s");
+            float stalledPercentage = results.Duration.TotalMilliseconds > 0
+                ? (float)(results.TotalStallTimeMs / results.Duration.TotalMilliseconds * 100.0)
+                : 0f;
+            sb.AppendLine($"{"Time Stalled",-25} {stalledPercentage:F1}%");
             sb.AppendLine();
 
             sb.AppendLine("MISC METRICS");
@@ -514,6 +565,9 @@ internal struct StatResult
     public int Count;
     public float Max;
     public float Min;
+    public float P50;
+    public float P95;
+    public float P99;
 }
 
 internal class PerformanceResults
@@ -538,6 +592,11 @@ internal class PerformanceResults
     public StatResult TickTime;
     // Networking
     public StatResult TimerLag;
+    public StatResult TicksPerFrame;
+    public StatResult StallDuration;
+    public StatResult CommandRoundTrip;
+    public StatResult CommandLatency;
+    public float TotalStallTimeMs;
 
     public StatResult TPS;
     public StatResult WindowCount;

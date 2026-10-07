@@ -185,6 +185,7 @@ namespace Multiplayer.Client.DebugUi
             currentY += DrawPerformanceSection(viewRect.x + Margin, currentY, viewRect.width - Margin);
             currentY += DrawPerformanceRecorderSection(viewRect.x + Margin, currentY, viewRect.width - Margin);
             currentY += DrawNetworkSyncSection(viewRect.x + Margin, currentY, viewRect.width - Margin);
+            currentY += DrawNetworkConditionsSection(viewRect.x + Margin, currentY, viewRect.width - Margin);
             currentY += DrawCoreSystemSection(viewRect.x + Margin, currentY, viewRect.width - Margin);
             currentY += DrawTimingSyncSection(viewRect.x + Margin, currentY, viewRect.width - Margin);
             currentY += DrawGameStateSection(viewRect.x + Margin, currentY, viewRect.width - Margin);
@@ -441,6 +442,100 @@ namespace Multiplayer.Client.DebugUi
             }
 
             return DrawSection(x, y, width, new("NETWORK & SYNC", lines));
+        }
+
+        private const int NetworkPercentilesRefreshIntervalFrames = 30;
+        private static int networkPercentilesComputedAtFrame = -NetworkPercentilesRefreshIntervalFrames;
+        private static string bufferPercentilesText = "N/A";
+        private static string ticksPerFramePercentilesText = "N/A";
+        private static string stallPercentilesText = "N/A";
+        private static string commandRoundTripPercentilesText = "N/A";
+        private static string commandLatencyPercentilesText = "N/A";
+
+        private static void RefreshNetworkPercentilesIfDue()
+        {
+            int framesSinceRefresh = Time.frameCount - networkPercentilesComputedAtFrame;
+            if (framesSinceRefresh >= 0 && framesSinceRefresh < NetworkPercentilesRefreshIntervalFrames) return;
+            networkPercentilesComputedAtFrame = Time.frameCount;
+
+            bufferPercentilesText = FormatPercentilePair(NetworkMetrics.RecentBufferDepths.GetValues().ToList(), 5, 50);
+            ticksPerFramePercentilesText = FormatMedianAndMax(NetworkMetrics.RecentTicksPerFrame.GetValues().ToList());
+
+            var stallDurations = NetworkMetrics.RecentStallDurationsMs.GetValues().ToList();
+            stallPercentilesText = stallDurations.Count == 0
+                ? "N/A"
+                : $"{SampleStatistics.FormatMs(SampleStatistics.Percentile(stallDurations, 95))} / {SampleStatistics.FormatMs(stallDurations.Max())}";
+
+            commandRoundTripPercentilesText = FormatMsPercentileTriple(NetworkMetrics.RecentCommandRoundTripsMs.GetValues().ToList());
+            commandLatencyPercentilesText = FormatMsPercentileTriple(NetworkMetrics.RecentCommandLatenciesMs.GetValues().ToList());
+        }
+
+        private static string FormatPercentilePair(List<int> values, double lowerPercentile, double upperPercentile)
+        {
+            if (values.Count == 0) return "N/A";
+            float lower = SampleStatistics.Percentile(values, lowerPercentile);
+            float upper = SampleStatistics.Percentile(values, upperPercentile);
+            return $"{lower:F0} / {upper:F0}";
+        }
+
+        private static string FormatMedianAndMax(List<int> values)
+        {
+            if (values.Count == 0) return "N/A";
+            float median = SampleStatistics.Percentile(values, 50);
+            return $"{median:F0} / {values.Max():F0}";
+        }
+
+        private static string FormatMsPercentileTriple(List<float> values)
+        {
+            if (values.Count == 0) return "N/A";
+            string p50 = SampleStatistics.FormatMs(SampleStatistics.Percentile(values, 50));
+            string p95 = SampleStatistics.FormatMs(SampleStatistics.Percentile(values, 95));
+            string p99 = SampleStatistics.FormatMs(SampleStatistics.Percentile(values, 99));
+            return $"{p50} / {p95} / {p99}";
+        }
+
+        private static float DrawNetworkConditionsSection(float x, float y, float width)
+        {
+            if (Multiplayer.session == null)
+            {
+                DebugLine[] noSessionLines = [new("Network:", "No active session", Color.gray)];
+                return DrawSection(x, y, width, new("NETWORK CONDITIONS", noSessionLines));
+            }
+
+            try
+            {
+                RefreshNetworkPercentilesIfDue();
+
+                int bufferNow = TickPatch.tickUntil - TickPatch.Timer;
+                Color bufferColor = PerformanceCalculator.GetPerformanceColor(bufferNow, 3, 1);
+
+                Color stallsColor = NetworkMetrics.IsStalled ? Color.red
+                    : NetworkMetrics.StallCount > 0 ? Color.yellow
+                    : Color.green;
+                string stallsText = $"{NetworkMetrics.StallCount} ({NetworkMetrics.TotalStallTimeMs / 1000:F1}s)";
+
+                var lines = new List<DebugLine>
+                {
+                    new("Buffer now:", $"{bufferNow}", bufferColor),
+                    new("Buffer p5 / p50:", bufferPercentilesText, Color.white),
+                    new("Ticks/frame p50 / max:", ticksPerFramePercentilesText, Color.white),
+                    new("Stalls:", stallsText, stallsColor)
+                };
+
+                if (NetworkMetrics.IsStalled)
+                    lines.Add(new("Current stall:", SampleStatistics.FormatMs((float)NetworkMetrics.CurrentStallDurationMs), Color.red));
+
+                lines.Add(new("Stall p95 / max:", stallPercentilesText, Color.white));
+                lines.Add(new("Cmd RTT p50/95/99:", commandRoundTripPercentilesText, Color.white));
+                lines.Add(new("Cmd delay p50/95/99:", commandLatencyPercentilesText, Color.white));
+
+                return DrawSection(x, y, width, new("NETWORK CONDITIONS", lines.ToArray()));
+            }
+            catch (Exception ex)
+            {
+                DebugLine[] errorLines = [new("Network Conditions:", $"Error: {ex.Message}", Color.red)];
+                return DrawSection(x, y, width, new("NETWORK CONDITIONS", errorLines));
+            }
         }
 
         /// <summary>

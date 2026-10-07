@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Ionic.Zlib;
+using Multiplayer.Client.DebugUi;
 using Multiplayer.Client.Desyncs;
 using Multiplayer.Client.Saving;
 using Multiplayer.Common;
@@ -18,7 +19,9 @@ namespace Multiplayer.Client
         [TypedPacketHandler]
         public void HandleCommand(ServerCommandPacket packet)
         {
-            Session.ScheduleCommand(packet.ToCommand());
+            var cmd = packet.ToCommand();
+            Session.ScheduleCommand(cmd);
+            NetworkMetrics.RecordCommandReceived(cmd);
             Multiplayer.session.receivedCmds++;
             Multiplayer.session.ProcessTimeControl();
         }
