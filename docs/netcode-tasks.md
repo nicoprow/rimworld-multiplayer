@@ -97,8 +97,19 @@ Both runs are short, with fewer than 30 command samples each, so the P95 and P99
   - The server keeps sent commands in `CommandHandler.recentCommands` until every playing player has acknowledged them, but at most 4096. A player's acknowledgement starts at `SentCmds` when they connect and when their world data is sent.
   - Tests are in `Source/Tests/CommandRedundancyTest.cs`.
 
+**Result with the reference relay** (68 s, 40 commands, compared with the task 1 baseline):
+
+| Metric | Baseline | Redundant commands |
+|---|---|---|
+| Command round trip, ms (min / avg / P95 / max) | 503 / 1176 / 2065 / 2065 | 484 / 603 / 734 / 1331 |
+| Command latency to execution, ms (avg / max) | 1345 / 2087 | 703 / 1347 |
+| Stalls | 15, 5.8% of the time, longest 818 ms | 12, 1.2% of the time, longest 568 ms |
+| Buffer depth, ticks (avg / P95) | 7.2 / 33 | 3.9 / 7 |
+
+No lost, doubled or misordered commands, and no desync. Playing felt much smoother. What remains is the delay before the game shows that an order was accepted. That is the round trip itself, which lockstep can't avoid; task 5 (latency hiding) addresses it.
+
 **Remaining work:**
-- Repeat the baseline run with the relay and compare.
+- Find the cause of the remaining outliers (round trip up to 1331 ms, one 568 ms stall). The host's log of that run was lost; the script now writes separate logs (`Player-Host.log` in the main data folder, `Player.log` in the client data folder).
 - Record a real Steam session before and after (both players need the same build).
 - Measure how big commands and sync opinions are in practice.
 - Decide whether separate LiteNetLib channels are still worth it once redundancy is measured. Everything else reliable (sync opinions, chat, selections) still shares one ordered stream.
@@ -125,6 +136,8 @@ Both runs are short, with fewer than 30 command samples each, so the P95 and P99
   - Our own code behaves the same on both: one ordered reliable stream per connection, frame time sent reliably, sync opinions fragmented, and the same gate on the client. Head-of-line blocking therefore exists on Steam too. How long each blockage lasts is unknown.
   - The relay can't sit between two Steam peers. `NetworkMetrics` measures in the game rather than in the transport, so recordings from real Steam sessions are comparable with the relay baseline.
 - **Protocol:** `MpVersion.Protocol` is 54. Any of these changes needs a bump. Client and server must have the same version, so old clients can't connect.
+- **The average round trip is about 100 ms above the configured 500 ms.** The relay keeps packets in order, so a packet can't overtake one with a longer jitter delay. With 30 packets a second, the delay tends towards the upper end of the jitter range (about 300 ms instead of 250 ms per direction). Real links with jitter queue packets in order too. The rest comes from tick rates: the server polls the network at 30 Hz, the client once per frame, and LiteNetLib sends every 15 ms.
+- **The world download for a join is slow under loss.** 839 KB took 22 s through the reference relay (about 37 KB/s), because it is sent as reliable 1 KB fragments in one ordered window of 64 packets. Relevant for task 7.
 - **Joining and rejoining:** the world data carries `SentCmds`, and the client starts its command receiver there (`ClientLoadingState`). The server switches the player to playing in the same step as sending the world data, so no command falls in between. A rejoin keeps the same connection and `ServerPlayer`, so the client's own command counter keeps counting.
 
 ---
