@@ -61,14 +61,30 @@ internal sealed class CellFieldOverlay(Map map, List<IntVec3> cells) : PendingOr
     }
 }
 
-internal sealed class DraftedMoveOverlay(Map map, Pawn pawn, IntVec3 destination) : PendingOrderOverlay(map)
+internal sealed class PawnTargetOverlay(Map map, Pawn pawn, LocalTargetInfo target) : PendingOrderOverlay(map)
 {
     public override void Draw()
     {
         if (!pawn.Spawned || pawn.Map != map) return;
+        if (!TryGetTargetPosition(out var targetPosition)) return;
 
-        var destinationCenter = destination.ToVector3ShiftedWithAltitude(AltitudeLayer.MetaOverlays);
-        GenDraw.DrawLineBetween(pawn.DrawPos, destinationCenter);
-        GenDraw.DrawTargetHighlight(new LocalTargetInfo(destination));
+        GenDraw.DrawLineBetween(pawn.DrawPos, targetPosition);
+        GenDraw.DrawTargetHighlight(target);
+    }
+
+    private bool TryGetTargetPosition(out Vector3 targetPosition)
+    {
+        float altitude = AltitudeLayer.MetaOverlays.AltitudeFor();
+
+        if (target.HasThing)
+        {
+            bool thingIsOnThisMap = target.Thing.Spawned && target.Thing.Map == map;
+            targetPosition = target.Thing.DrawPos;
+            targetPosition.y = altitude;
+            return thingIsOnThisMap;
+        }
+
+        targetPosition = target.Cell.ToVector3ShiftedWithAltitude(altitude);
+        return target.Cell.IsValid;
     }
 }
