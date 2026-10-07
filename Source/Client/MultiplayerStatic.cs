@@ -44,6 +44,7 @@ namespace Multiplayer.Client
         public static readonly Texture2D TradeModeIcon = ContentFinder<Texture2D>.Get("UI/Buttons/TradeMode");
 
         public const string MpHostReplayCmdLineArgName = "mphostreplay";
+        public const string MpHostAutomaticallyCmdLineArgName = "mphostauto";
         public static string MpHostReplayCmdLineArgValue;
 
         static MultiplayerStatic()
@@ -231,7 +232,8 @@ namespace Multiplayer.Client
             if (GenCommandLine.TryGetCommandLineArg(MpHostReplayCmdLineArgName, out var path))
             {
                 MpHostReplayCmdLineArgValue = path;
-                ClientUtil.DoubleLongEvent(() => HostWindow.VerifyAndOpen(path), "Loading");
+                bool hostImmediately = GenCommandLine.CommandLineArgPassed(MpHostAutomaticallyCmdLineArgName);
+                ClientUtil.DoubleLongEvent(() => HostWindow.VerifyAndOpen(path, hostImmediately), "Loading");
             }
         }
 

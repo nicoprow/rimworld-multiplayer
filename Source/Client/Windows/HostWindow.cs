@@ -37,13 +37,19 @@ namespace Multiplayer.Client
 
         private ServerSettings serverSettings;
 
-        public static void VerifyAndOpen(string path)
+        public static void VerifyAndOpen(string path, bool hostImmediately = false)
         {
             FileInfo fileInfo = new(path);
             var saveFile = SaveFile.ReadMpSave(fileInfo);
             ServerBrowser.CheckGameVersionAndMods(
                 saveFile,
-                () => { Find.WindowStack.Add(new HostWindow(saveFile) { returnToServerBrowser = false }); }
+                () =>
+                {
+                    var hostWindow = new HostWindow(saveFile) { returnToServerBrowser = false };
+                    Find.WindowStack.Add(hostWindow);
+                    if (hostImmediately)
+                        hostWindow.TryHost();
+                }
             );
         }
 
