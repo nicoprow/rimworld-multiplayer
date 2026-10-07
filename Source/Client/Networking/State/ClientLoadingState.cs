@@ -114,7 +114,7 @@ public class ClientLoadingState(ConnectionBase connection) : ClientBaseState(con
         );
 
         TickPatch.tickUntil = tickUntil;
-        Multiplayer.session.receivedCmds = remoteSentCmds;
+        Multiplayer.session.serverCommands.Reset(remoteSentCmds);
         Multiplayer.session.remoteTickUntil = tickUntil;
         TickPatch.serverFrozen = serverFrozen;
 

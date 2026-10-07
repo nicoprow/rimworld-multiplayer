@@ -12,12 +12,13 @@ public record struct ServerKeepAlivePacket(int id) : IPacket
 }
 
 [PacketDefinition(Packets.Client_KeepAlive)]
-public record struct ClientKeepAlivePacket(int id, int ticksBehind, bool simulating, int workTicks) : IPacket
+public record struct ClientKeepAlivePacket(int id, int ticksBehind, bool simulating, int workTicks, int receivedCommands) : IPacket
 {
     public int id = id;
     public int ticksBehind = ticksBehind;
     public bool simulating = simulating;
     public int workTicks = workTicks;
+    public int receivedCommands = receivedCommands;
 
     public void Bind(PacketBuffer buf)
     {
@@ -25,5 +26,6 @@ public record struct ClientKeepAlivePacket(int id, int ticksBehind, bool simulat
         buf.Bind(ref ticksBehind);
         buf.Bind(ref simulating);
         buf.Bind(ref workTicks);
+        buf.Bind(ref receivedCommands);
     }
 }

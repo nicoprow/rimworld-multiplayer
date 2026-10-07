@@ -189,7 +189,7 @@ namespace Multiplayer.Common
 
             // Send to simulating players as well to update the simulation window for them and actually update further
             // during the same simulation.
-            SendToPlaying(new ServerTimeControlPacket(gameTimer, sentCmdsSnapshot, serverTimePerTick), false);
+            SendTimeControlWithUnacknowledgedCommands();
 
             serverTimePerTick = PlayingIngamePlayers.MaxOrZero(p => p.frameTime);
 
@@ -198,6 +198,21 @@ namespace Multiplayer.Common
 
             if (serverTimePerTick > StandardTimePerTick * 4f)
                 serverTimePerTick = StandardTimePerTick * 4f;
+        }
+
+        private void SendTimeControlWithUnacknowledgedCommands()
+        {
+            foreach (ServerPlayer player in PlayingPlayers)
+            {
+                var timeControl = new ServerTimeControlPacket(gameTimer, sentCmdsSnapshot, serverTimePerTick)
+                {
+                    acknowledgedClientCommands = player.clientCommands.NextExpectedIndex,
+                    redundantCommands = commands.recentCommands.SelectForPacket(player.acknowledgedServerCommands)
+                };
+                player.conn.Send(timeControl, reliable: false);
+            }
+
+            commands.ForgetCommandsAcknowledgedByAllPlayingPlayers();
         }
 
         public void TryStop()

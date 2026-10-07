@@ -10,6 +10,8 @@ namespace Multiplayer.Common
 
         public int SentCmds { get; private set; }
 
+        public readonly UnacknowledgedCommandWindow recentCommands = new();
+
         public CommandHandler(MultiplayerServer server)
         {
             this.server = server;
@@ -37,6 +39,7 @@ namespace Multiplayer.Common
                     return;
             }
 
+            int commandIndex = SentCmds;
             var cmd = new ScheduledCommand(
                 cmdType,
                 server.gameTimer,
@@ -49,10 +52,11 @@ namespace Multiplayer.Common
             // todo cull target players if not global
             server.worldData.mapCmds.GetOrAddNew(mapId).Add(toSave);
             server.worldData.tmpMapCmds?.GetOrAddNew(mapId).Add(toSave);
+            recentCommands.Add(commandIndex, toSave);
 
             if (server.CanUseStandaloneMapStreaming(mapId))
             {
-                var serialized = ServerCommandPacket.From(cmd).Serialize();
+                var serialized = ServerCommandPacket.From(cmd, commandIndex).Serialize();
                 foreach (var player in server.PlayingPlayers)
                 {
                     if (!player.hasReportedCurrentMap || player.currentMapId < 0 || player.currentMapId == mapId)
@@ -61,10 +65,20 @@ namespace Multiplayer.Common
             }
             else
             {
-                server.SendToPlaying(ServerCommandPacket.From(cmd));
+                server.SendToPlaying(ServerCommandPacket.From(cmd, commandIndex));
             }
 
             SentCmds++;
+        }
+
+        public void ForgetCommandsAcknowledgedByAllPlayingPlayers()
+        {
+            int oldestCommandStillNeeded = server.PlayingPlayers
+                .Select(player => player.acknowledgedServerCommands)
+                .DefaultIfEmpty(SentCmds)
+                .Min();
+
+            recentCommands.ForgetCommandsBefore(oldestCommandStillNeeded);
         }
 
         public void PauseAll()

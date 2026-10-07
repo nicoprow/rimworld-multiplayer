@@ -2,8 +2,10 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using LudeonTK;
 using Multiplayer.Client.Networking;
+using Multiplayer.Client.DebugUi;
 using Multiplayer.Client.Util;
 using Multiplayer.Common;
+using Multiplayer.Common.Networking.Packet;
 using RimWorld;
 using Steamworks;
 using UnityEngine;
@@ -17,7 +19,8 @@ namespace Multiplayer.Client
         public string gameName;
         public int playerId;
 
-        public int receivedCmds;
+        public readonly InOrderCommandReceiver<ScheduledCommand> serverCommands = new();
+        public int receivedCmds => serverCommands.NextExpectedIndex;
         public int remoteTickUntil;
         public int remoteSentCmds;
 
@@ -51,6 +54,11 @@ namespace Multiplayer.Client
         public bool ArbiterPlaying => players.Any(p => p.type == PlayerType.Arbiter && p.status == PlayerStatus.Playing);
 
         public IConnector connector;
+
+        public const float RedundantCommandSendIntervalSeconds = 1f / 30f;
+        public readonly UnacknowledgedCommandWindow ownCommandsAwaitingAcknowledgement = new();
+        private int nextOwnCommandIndex;
+        private float redundantCommandsSentAt;
 
         public void Stop()
         {
@@ -142,9 +150,50 @@ namespace Multiplayer.Client
                 cmd.GetMap()?.AsyncTime().Cmds.Enqueue(cmd);
         }
 
+        public void ReceiveServerCommand(int index, ScheduledCommand cmd)
+        {
+            serverCommands.Receive(index, cmd, AcceptServerCommandInOrder);
+            ProcessTimeControl();
+        }
+
+        private void AcceptServerCommandInOrder(ScheduledCommand cmd)
+        {
+            ScheduleCommand(cmd);
+            NetworkMetrics.RecordCommandReceived(cmd);
+        }
+
+        public void SendOwnCommand(CommandType type, int mapId, byte[] data)
+        {
+            int commandIndex = nextOwnCommandIndex++;
+            var packet = new ClientCommandPacket(type, mapId, data) { index = commandIndex };
+
+            client.Send(packet);
+            ownCommandsAwaitingAcknowledgement.Add(commandIndex, packet.ToPayload());
+        }
+
+        public void AcknowledgeOwnCommands(int acknowledgedCommandCount) =>
+            ownCommandsAwaitingAcknowledgement.ForgetCommandsBefore(acknowledgedCommandCount);
+
+        private void SendUnacknowledgedOwnCommandsRedundantly()
+        {
+            if (client?.State != ConnectionStateEnum.ClientPlaying) return;
+            if (ownCommandsAwaitingAcknowledgement.Count == 0) return;
+
+            float now = Time.realtimeSinceStartup;
+            bool sentRecently = now - redundantCommandsSentAt < RedundantCommandSendIntervalSeconds;
+            if (sentRecently) return;
+
+            var commandsForPacket = ownCommandsAwaitingAcknowledgement.SelectForPacket(0);
+            if (commandsForPacket.Count == 0) return;
+
+            client.Send(new ClientRedundantCommandsPacket(commandsForPacket), reliable: false);
+            redundantCommandsSentAt = now;
+        }
+
         public void Update()
         {
             locationPings.UpdatePing();
+            SendUnacknowledgedOwnCommandsRedundantly();
         }
     }
 }

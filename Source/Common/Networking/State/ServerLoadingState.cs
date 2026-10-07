@@ -17,6 +17,7 @@ public class ServerLoadingState : AsyncConnectionState
         Player.ticksBehindReceivedAt = Server.gameTimer;
         Player.simulating = packet.simulating;
         Player.keepAliveAt = Server.NetTimer;
+        Player.AcknowledgeServerCommands(packet.receivedCommands);
 
         if (Player.IsHost)
             Server.workTicks = packet.workTicks;
@@ -47,6 +48,7 @@ public class ServerLoadingState : AsyncConnectionState
         writer.WriteInt32(Player.FactionId);
         writer.WriteInt32(Server.gameTimer);
         writer.WriteInt32(Server.commands.SentCmds);
+        Player.acknowledgedServerCommands = Server.commands.SentCmds;
         writer.WriteBool(Server.freezeManager.Frozen);
         writer.WritePrefixedBytes(Server.worldData.savedGame);
         writer.WritePrefixedBytes(Server.worldData.sessionData);

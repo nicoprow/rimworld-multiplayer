@@ -34,6 +34,7 @@ public enum Packets : byte
     Client_RequestRejoin,
     Client_SetFaction,
     Client_FrameTime,
+    Client_RedundantCommands,
 
     // Joining
     Server_ProtocolOk,

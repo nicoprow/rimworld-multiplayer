@@ -13,19 +13,27 @@ public abstract class ClientBaseState(ConnectionBase connection) : MpConnectionS
     {
         int ticksBehind = TickPatch.tickUntil - TickPatch.Timer;
 
-        connection.Send(new ClientKeepAlivePacket(packet.id, ticksBehind, TickPatch.Simulating, TickPatch.workTicks),
+        int receivedCommands = Multiplayer.session?.receivedCmds ?? 0;
+
+        connection.Send(new ClientKeepAlivePacket(packet.id, ticksBehind, TickPatch.Simulating, TickPatch.workTicks, receivedCommands),
             false);
     }
 
     [TypedPacketHandler]
     public void HandleTimeControl(ServerTimeControlPacket packet)
     {
+        ReceiveCommandStateCarriedBy(packet);
+
         if (Multiplayer.session.remoteTickUntil >= packet.tickUntil) return;
 
         TickPatch.serverTimePerTick = packet.serverTimePerTick;
         Multiplayer.session.remoteTickUntil = packet.tickUntil;
         Multiplayer.session.remoteSentCmds = packet.sentCmds;
         Multiplayer.session.ProcessTimeControl();
+    }
+
+    protected virtual void ReceiveCommandStateCarriedBy(ServerTimeControlPacket packet)
+    {
     }
 
     // Currently handles disconnection only for Steam connections. See comment in ConnectionBase.Close for more info.

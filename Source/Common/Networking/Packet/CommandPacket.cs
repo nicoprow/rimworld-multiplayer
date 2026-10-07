@@ -3,6 +3,7 @@
 [PacketDefinition(Packets.Server_Command)]
 public record struct ServerCommandPacket : IPacket
 {
+    public int index;
     public CommandType type;
     public int ticks;
     public int factionId;
@@ -10,8 +11,9 @@ public record struct ServerCommandPacket : IPacket
     public int playerId;
     public byte[] data;
 
-    public static ServerCommandPacket From(ScheduledCommand cmd) => new()
+    public static ServerCommandPacket From(ScheduledCommand cmd, int index) => new()
     {
+        index = index,
         type = cmd.type,
         ticks = cmd.ticks,
         factionId = cmd.factionId,
@@ -25,6 +27,7 @@ public record struct ServerCommandPacket : IPacket
 
     public void Bind(PacketBuffer buf)
     {
+        buf.Bind(ref index);
         buf.BindEnum(ref type);
         buf.Bind(ref ticks);
         buf.Bind(ref factionId);
@@ -37,12 +40,23 @@ public record struct ServerCommandPacket : IPacket
 [PacketDefinition(Packets.Client_Command)]
 public record struct ClientCommandPacket(CommandType type, int mapId, byte[] data) : IPacket
 {
+    public int index;
     public CommandType type = type;
     public int mapId = mapId;
     public byte[] data = data;
 
+    public static ClientCommandPacket FromPayload(byte[] payload)
+    {
+        var packet = new ClientCommandPacket();
+        packet.Bind(new PacketReader(new ByteReader(payload)));
+        return packet;
+    }
+
+    public byte[] ToPayload() => this.Serialize().data;
+
     public void Bind(PacketBuffer buf)
     {
+        buf.Bind(ref index);
         buf.BindEnum(ref type);
         buf.Bind(ref mapId);
         buf.BindRemaining(ref data, maxLength: 65535);

@@ -56,6 +56,7 @@ namespace Multiplayer.Common
                 ServerLog.Error($"Connection {conn} already has a server player");
 
             conn.serverPlayer = new ServerPlayer(nextPlayerId++, conn);
+            conn.serverPlayer.acknowledgedServerCommands = server.commands.SentCmds;
             Players.Add(conn.serverPlayer);
             ServerLog.Log($"New connection: {conn}");
 

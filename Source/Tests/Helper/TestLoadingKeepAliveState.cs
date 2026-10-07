@@ -43,7 +43,7 @@ public class TestLoadingKeepAliveState : AsyncConnectionState
         await TypedPacket<ServerJoinDataPacket>();
 
         connection.Send(Packets.Client_WorldRequest);
-        connection.Send(new ClientKeepAlivePacket(0, 0, false, 0), false);
+        connection.Send(new ClientKeepAlivePacket(0, 0, false, 0, 0), false);
 
         packet = await Packet(Packets.Server_WorldDataStart);
         packet.Seek(packet.Length);

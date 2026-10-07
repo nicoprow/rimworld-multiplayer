@@ -31,7 +31,23 @@ namespace Multiplayer.Common
         }
 
         [TypedPacketHandler]
-        public void HandleClientCommand(ClientCommandPacket packet)
+        public void HandleClientCommand(ClientCommandPacket packet) =>
+            Player.clientCommands.Receive(packet.index, packet, ExecuteClientCommand);
+
+        [TypedPacketHandler]
+        public void HandleRedundantCommands(ClientRedundantCommandsPacket packet)
+        {
+            foreach (var redundantCommand in packet.commands)
+            {
+                bool alreadyExecuted = redundantCommand.index < Player.clientCommands.NextExpectedIndex;
+                if (alreadyExecuted) continue;
+
+                var commandPacket = ClientCommandPacket.FromPayload(redundantCommand.payload);
+                Player.clientCommands.Receive(redundantCommand.index, commandPacket, ExecuteClientCommand);
+            }
+        }
+
+        private void ExecuteClientCommand(ClientCommandPacket packet)
         {
             int? mapToResync = null;
 
@@ -129,6 +145,7 @@ namespace Multiplayer.Common
             Player.ticksBehindReceivedAt = Server.gameTimer;
             Player.simulating = packet.simulating;
             Player.keepAliveAt = Server.NetTimer;
+            Player.AcknowledgeServerCommands(packet.receivedCommands);
 
             if (Player.IsHost)
                 Server.workTicks = packet.workTicks;

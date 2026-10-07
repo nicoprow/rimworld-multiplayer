@@ -79,10 +79,14 @@ namespace Multiplayer.Client
         public static void SendCommand(this ConnectionBase conn, CommandType type, int mapId, byte[] data)
         {
             bool isLiveSessionConnection = conn == Multiplayer.Client && !Multiplayer.IsReplay;
-            if (isLiveSessionConnection)
-                NetworkMetrics.RecordCommandSent(type, mapId, data);
+            if (!isLiveSessionConnection)
+            {
+                conn.Send(new ClientCommandPacket(type, mapId, data));
+                return;
+            }
 
-            conn.Send(new ClientCommandPacket(type, mapId, data));
+            NetworkMetrics.RecordCommandSent(type, mapId, data);
+            Multiplayer.session.SendOwnCommand(type, mapId, data);
         }
 
         public static void SendCommand(this ConnectionBase conn, CommandType type, int mapId, params object[] data) =>

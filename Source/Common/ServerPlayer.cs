@@ -30,6 +30,9 @@ namespace Multiplayer.Common
         public bool frozen;
         public int unfrozenAt;
 
+        public int acknowledgedServerCommands;
+        public readonly InOrderCommandReceiver<ClientCommandPacket> clientCommands = new();
+
         // Track which map the player is currently on
         public int currentMapId = -1;
         public bool hasReportedCurrentMap;
@@ -73,6 +76,9 @@ namespace Multiplayer.Common
             conn.Close(reason, data);
             Server.playerManager.SetDisconnected(conn, reason);
         }
+
+        public void AcknowledgeServerCommands(int receivedCommands) =>
+            acknowledgedServerCommands = Math.Max(acknowledgedServerCommands, receivedCommands);
 
         public void SendPacket<T>(T packet, bool reliable = true) where T : struct, IPacket =>
             conn.Send(packet, reliable);

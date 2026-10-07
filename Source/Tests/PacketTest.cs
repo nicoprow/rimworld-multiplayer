@@ -34,6 +34,7 @@ public class PacketTest
         yield return new ClientCommandPacket(CommandType.GlobalTimeSpeed, 1, [1, 2, 3]);
         yield return new ClientCommandPacket(CommandType.PlayerCount, 123, []);
         yield return new ClientCommandPacket(CommandType.DebugTools, 0, [255, 0, 255]);
+        yield return new ClientCommandPacket(CommandType.Sync, 4, [7, 8]) { index = 123_456 };
 
         yield return new ServerCommandPacket
         {
@@ -47,6 +48,7 @@ public class PacketTest
 
         yield return new ServerCommandPacket
         {
+            index = 98_765,
             type = CommandType.CreateJoinPoint,
             ticks = 200,
             factionId = 5,
@@ -152,10 +154,18 @@ public class PacketTest
         yield return new ClientSetFactionPacket(123, 123);
         yield return new ServerSetFactionPacket(123, 123);
 
-        yield return new ClientKeepAlivePacket(999, 90, false, 1111);
+        yield return new ClientKeepAlivePacket(999, 90, false, 1111, 4321);
         yield return new ServerKeepAlivePacket(256);
 
         yield return new ServerTimeControlPacket(2_123_456, 1000, 1.2f);
+        yield return new ServerTimeControlPacket(500, 20, 16.6f)
+        {
+            acknowledgedClientCommands = 7,
+            redundantCommands = [new RedundantCommand(18, [1, 2, 3]), new RedundantCommand(19, [])]
+        };
+
+        yield return new ClientRedundantCommandsPacket([]);
+        yield return new ClientRedundantCommandsPacket([new RedundantCommand(0, [9]), new RedundantCommand(5, [4, 5])]);
 
         yield return new ServerFreezePacket(true, 1234);
         yield return new ServerFreezePacket(false, 9876);

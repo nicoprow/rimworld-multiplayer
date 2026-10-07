@@ -17,13 +17,21 @@ namespace Multiplayer.Client
     public class ClientPlayingState(ConnectionBase connection) : ClientBaseState(connection)
     {
         [TypedPacketHandler]
-        public void HandleCommand(ServerCommandPacket packet)
+        public void HandleCommand(ServerCommandPacket packet) =>
+            Session.ReceiveServerCommand(packet.index, packet.ToCommand());
+
+        protected override void ReceiveCommandStateCarriedBy(ServerTimeControlPacket packet)
         {
-            var cmd = packet.ToCommand();
-            Session.ScheduleCommand(cmd);
-            NetworkMetrics.RecordCommandReceived(cmd);
-            Multiplayer.session.receivedCmds++;
-            Multiplayer.session.ProcessTimeControl();
+            Session.AcknowledgeOwnCommands(packet.acknowledgedClientCommands);
+
+            foreach (var redundantCommand in packet.redundantCommands)
+            {
+                bool alreadyReceived = redundantCommand.index < Session.receivedCmds;
+                if (alreadyReceived) continue;
+
+                var cmd = ScheduledCommand.Deserialize(new ByteReader(redundantCommand.payload));
+                Session.ReceiveServerCommand(redundantCommand.index, cmd);
+            }
         }
 
         [TypedPacketHandler]
