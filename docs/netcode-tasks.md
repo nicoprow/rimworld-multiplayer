@@ -25,7 +25,8 @@ Status values: `todo`, `research`, `in progress`, `done`, `dropped`.
   - The default is the reference profile: 250 ms ±50 ms and 2.5% loss per direction.
   - `-HostSave <name or path>` hosts a multiplayer save (`.zip` in `MpReplays`) automatically. It passes `-mphostreplay` and the new `-mphostauto` flag, which runs the Host button straight away using the host settings saved in the mod (port, LAN, Steam). If hosting fails, the host window stays open. Singleplayer `.rws` saves aren't accepted; host them once and save them as a multiplayer save first.
   - The client is only started once the host is listening on its port (checked with `Get-NetUDPEndpoint`), because the client's auto-join doesn't retry. `-ClientExtraDelaySeconds` adds a delay on top, and `-HostStartTimeoutSeconds` (default 300) sets how long to wait.
-  - Options: `-NoAutoConnect`, `-NoRelay`, `-NoHostInstance`, `-NoClientInstance` and the relay parameters.
+  - The host window is placed on the left half of the primary screen and the client on the right, both windowed. The client's `Prefs.xml` gets the matching screen size, because RimWorld resizes the window from it while loading. `-NoWindowLayout` turns this off.
+  - Options: `-NoAutoConnect`, `-NoRelay`, `-NoHostInstance`, `-NoClientInstance`, `-NoWindowLayout` and the relay parameters.
   - Test colony: `New Arrivals1` (5 MB singleplayer save). Use the same save for every baseline so numbers stay comparable.
 - `NetworkMetrics` (`Source/Client/UI/DebugPanel`) measures on each client:
   - buffer depth (`tickUntil - Timer`) at the start of each frame
