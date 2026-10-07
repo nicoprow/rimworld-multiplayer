@@ -16,10 +16,20 @@ param(
     [switch]$NoHostInstance,
     [switch]$NoClientInstance,
     [switch]$NoAutoConnect,
-    [switch]$NoRelay
+    [switch]$NoRelay,
+    [switch]$NoWindowLayout,
+    [int]$WindowAppearTimeoutSeconds = 60
 )
 
 $ErrorActionPreference = "Stop"
+
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -Namespace NetcodeTest -Name WindowPlacement -MemberDefinition @"
+[DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+[DllImport("user32.dll")] public static extern bool SetWindowPos(System.IntPtr hWnd, System.IntPtr hWndInsertAfter, int x, int y, int width, int height, uint flags);
+[DllImport("user32.dll")] public static extern bool ShowWindow(System.IntPtr hWnd, int command);
+"@
+[NetcodeTest.WindowPlacement]::SetProcessDPIAware() | Out-Null
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $conditionerProject = Join-Path $repositoryRoot "Source\NetworkConditioner\NetworkConditioner.csproj"
@@ -76,15 +86,82 @@ function Resolve-HostSavePath {
     return (Resolve-Path $existingPath).Path
 }
 
+function Get-HalfScreenArea([string]$side) {
+    $workArea = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+    $halfWidth = [int][Math]::Floor($workArea.Width / 2)
+    $left = if ($side -eq "Left") { $workArea.Left } else { $workArea.Left + $halfWidth }
+    return @{ X = $left; Y = $workArea.Top; Width = $halfWidth; Height = $workArea.Height }
+}
+
+function Get-WindowedLaunchArguments([string]$side) {
+    if ($NoWindowLayout) { return @() }
+    $area = Get-HalfScreenArea $side
+    return @("-screen-fullscreen", "0", "-screen-width", $area.Width, "-screen-height", $area.Height)
+}
+
+function Set-ClientWindowPrefs {
+    if ($NoWindowLayout) { return }
+
+    $clientConfigFolder = Join-Path $ClientDataFolder "Config"
+    $clientPrefsPath = Join-Path $clientConfigFolder "Prefs.xml"
+    $area = Get-HalfScreenArea "Right"
+
+    if (-not (Test-Path $clientPrefsPath)) {
+        New-Item -ItemType Directory -Force $clientConfigFolder | Out-Null
+        Set-Content -Path $clientPrefsPath -Encoding UTF8 -Value "<?xml version=`"1.0`" encoding=`"utf-8`"?>`n<PrefsData />"
+    }
+
+    $prefsDocument = New-Object System.Xml.XmlDocument
+    $prefsDocument.Load($clientPrefsPath)
+    $screenSettings = [ordered]@{ screenWidth = $area.Width; screenHeight = $area.Height; fullscreen = "False" }
+    foreach ($settingName in $screenSettings.Keys) {
+        $settingNode = $prefsDocument.DocumentElement.SelectSingleNode($settingName)
+        if ($null -eq $settingNode) {
+            $settingNode = $prefsDocument.CreateElement($settingName)
+            $prefsDocument.DocumentElement.AppendChild($settingNode) | Out-Null
+        }
+        $settingNode.InnerText = [string]$screenSettings[$settingName]
+    }
+    $prefsDocument.Save($clientPrefsPath)
+}
+
+function Wait-ForMainWindow([System.Diagnostics.Process]$process) {
+    $deadline = (Get-Date).AddSeconds($WindowAppearTimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        $process.Refresh()
+        if ($process.HasExited) { return [IntPtr]::Zero }
+        if ($process.MainWindowHandle -ne [IntPtr]::Zero) { return $process.MainWindowHandle }
+        Start-Sleep -Milliseconds 250
+    }
+    return [IntPtr]::Zero
+}
+
+function Move-WindowToHalfScreen([System.Diagnostics.Process]$process, [string]$side) {
+    if ($NoWindowLayout) { return }
+
+    $windowHandle = Wait-ForMainWindow $process
+    if ($windowHandle -eq [IntPtr]::Zero) {
+        Write-Host "Couldn't find the $side window to arrange it."
+        return
+    }
+
+    $restoreWindowCommand = 9
+    $noZOrderChangeFlag = 0x0004
+    $area = Get-HalfScreenArea $side
+    [NetcodeTest.WindowPlacement]::ShowWindow($windowHandle, $restoreWindowCommand) | Out-Null
+    [NetcodeTest.WindowPlacement]::SetWindowPos($windowHandle, [IntPtr]::Zero, $area.X, $area.Y, $area.Width, $area.Height, $noZOrderChangeFlag) | Out-Null
+}
+
 function Start-HostInstance {
-    $hostArguments = @('"-username=Host"')
+    $hostArguments = @('"-username=Host"') + (Get-WindowedLaunchArguments "Left")
     if ($HostSave -ne "") {
         $hostSavePath = Resolve-HostSavePath
         $hostArguments += "`"-mphostreplay=$hostSavePath`""
         $hostArguments += '"-mphostauto"'
     }
 
-    Start-Process $RimWorldExe -ArgumentList $hostArguments | Out-Null
+    $hostProcess = Start-Process $RimWorldExe -ArgumentList $hostArguments -PassThru
+    Move-WindowToHalfScreen $hostProcess "Left"
     if ($HostSave -ne "") {
         Write-Host "Host instance started. It hosts $hostSavePath automatically on the port saved in the mod settings."
     } else {
@@ -114,15 +191,17 @@ function Wait-ForHostServer {
 
 function Start-ClientInstance {
     Copy-ModListToClientDataFolder
+    Set-ClientWindowPrefs
 
     $connectPort = if ($NoRelay) { $HostPort } else { $RelayPort }
     $clientArguments = @(
         "`"-username=$ClientUsername`"",
         "`"-savedatafolder=$ClientDataFolder`""
-    )
+    ) + (Get-WindowedLaunchArguments "Right")
     if (-not $NoAutoConnect) { $clientArguments += "`"-connect=127.0.0.1:$connectPort`"" }
 
-    Start-Process $RimWorldExe -ArgumentList $clientArguments | Out-Null
+    $clientProcess = Start-Process $RimWorldExe -ArgumentList $clientArguments -PassThru
+    Move-WindowToHalfScreen $clientProcess "Right"
     Write-Host "Client instance started. It joins 127.0.0.1:$connectPort."
 }
 
