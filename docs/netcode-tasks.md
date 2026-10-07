@@ -81,18 +81,28 @@ Both runs are short, with fewer than 30 command samples each, so the P95 and P99
 
 ## 2. Separate channels and send commands redundantly
 
-**Status:** research
+**Status:** in progress
 
 **Goal:** a single lost packet no longer stalls the command stream.
 
-**Work:**
-- Use separate channels for:
-  - the real-time stream (commands, time control)
-  - bulk data (saves, join data, traces, desync reports)
-  - chat and UI state (cursor, selections, pings)
-- Command stream: each packet carries every command not yet acknowledged, tagged with a sequence number. The receiver removes duplicates and acknowledges the highest number it has received in order. The sender drops acknowledged commands.
-- Keep reliable delivery for bulk data, but on its own channel.
-- Raise disconnect timeouts so they survive several seconds of loss bursts.
+**Priority:** Steam is the main way the game is played. Prefer fixes that work on both transports over LiteNetLib-only ones.
+
+**Done** (protocol 55):
+- `ClientFrameTimePacket` is sent unreliably.
+- Redundant commands, in both directions:
+  - Every command has a sequence index: the server's `CommandHandler.SentCmds` before the send, and a per-session counter on the client (`MultiplayerSession.SendOwnCommand`). The index is in `ServerCommandPacket.index` and `ClientCommandPacket.index`.
+  - Until acknowledged, each command is repeated in every unreliable packet sent at the net tick rate. Server to client: inside `ServerTimeControlPacket.redundantCommands`, acknowledged through `ClientKeepAlivePacket.receivedCommands`. Client to server: in `ClientRedundantCommandsPacket` from `MultiplayerSession.Update` every 33 ms, acknowledged through `ServerTimeControlPacket.acknowledgedClientCommands`.
+  - The reliable command packets are still sent. Commands that don't fit the 1000-byte budget (`UnacknowledgedCommandWindow.MaxRedundantBytesPerPacket`) arrive that way. The budget keeps every packet below Steam's roughly 1200-byte unreliable limit and LiteNetLib's starting MTU of 1164.
+  - `InOrderCommandReceiver` delivers commands strictly in index order and drops duplicates. On the client it replaces `receivedCmds`, which is now `serverCommands.NextExpectedIndex`. On the server there is one per player (`ServerPlayer.clientCommands`).
+  - The server keeps sent commands in `CommandHandler.recentCommands` until every playing player has acknowledged them, but at most 4096. A player's acknowledgement starts at `SentCmds` when they connect and when their world data is sent.
+  - Tests are in `Source/Tests/CommandRedundancyTest.cs`.
+
+**Remaining work:**
+- Repeat the baseline run with the relay and compare.
+- Record a real Steam session before and after (both players need the same build).
+- Measure how big commands and sync opinions are in practice.
+- Decide whether separate LiteNetLib channels are still worth it once redundancy is measured. Everything else reliable (sync opinions, chat, selections) still shares one ordered stream.
+- Raise disconnect timeouts so they survive several seconds of loss bursts (LiteNetLib `DisconnectTimeout` is the default 5000 ms).
 
 **Findings:**
 - **One ordered stream carries all reliable traffic.** `ConnectionBase.Send` takes only a `reliable` flag. `LiteNetConnection.SendRaw` maps it to `ReliableOrdered` or `Unreliable`, always on channel 0, and the server's `NetManager`s use the default `ChannelsCount` of 1. A lost packet therefore holds back every reliable packet sent after it, whatever its type.
@@ -115,10 +125,7 @@ Both runs are short, with fewer than 30 command samples each, so the P95 and P99
   - Our own code behaves the same on both: one ordered reliable stream per connection, frame time sent reliably, sync opinions fragmented, and the same gate on the client. Head-of-line blocking therefore exists on Steam too. How long each blockage lasts is unknown.
   - The relay can't sit between two Steam peers. `NetworkMetrics` measures in the game rather than in the transport, so recordings from real Steam sessions are comparable with the relay baseline.
 - **Protocol:** `MpVersion.Protocol` is 54. Any of these changes needs a bump. Client and server must have the same version, so old clients can't connect.
-
-**Open questions:**
-- How big commands and sync opinions are in practice. This sets how many unacknowledged commands fit in one unreliable packet. Measure in a real game.
-- How the join flow sets the starting command sequence. A joining client currently sets `receivedCmds = remoteSentCmds` once its world data is loaded (`ClientLoadingState`).
+- **Joining and rejoining:** the world data carries `SentCmds`, and the client starts its command receiver there (`ClientLoadingState`). The server switches the player to playing in the same step as sending the world data, so no command falls in between. A rejoin keeps the same connection and `ServerPlayer`, so the client's own command counter keeps counting.
 
 ---
 
