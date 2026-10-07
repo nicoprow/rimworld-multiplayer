@@ -49,7 +49,7 @@ static class ShowPendingAssignmentsWhileDrawing
         yield return AccessTools.Method(typeof(InspectPaneFiller), nameof(InspectPaneFiller.DrawAreaAllowed));
     }
 
-    static void Prefix(Pawn pawn, out PendingAssignmentsShownWhileDrawing __state)
+    static void Prefix(Pawn pawn, out PendingValuesShownWhileDrawing __state)
     {
         __state = null;
         if (Multiplayer.Client == null || TickPatch.Simulating) return;
@@ -58,9 +58,9 @@ static class ShowPendingAssignmentsWhileDrawing
         __state = PendingAssignmentsShownWhileDrawing.Show(pawn);
     }
 
-    static Exception Finalizer(Exception __exception, PendingAssignmentsShownWhileDrawing __state)
+    static Exception Finalizer(Exception __exception, PendingValuesShownWhileDrawing __state)
     {
-        __state?.RestoreRealAssignments();
+        __state?.RestoreRealValues();
         return __exception;
     }
 }
@@ -96,41 +96,33 @@ static class PendingAssignments
     public static string ValueNameOf(MethodBase setter) => setter.Name.Substring("set_".Length);
 }
 
-sealed class PendingAssignmentsShownWhileDrawing
+static class PendingAssignmentsShownWhileDrawing
 {
-    private readonly List<Action> restoreRealValues = new();
+    private static Pawn pawnWithPendingAllowedAreaShown;
 
-    public static PendingAssignmentsShownWhileDrawing Show(Pawn pawn)
+    public static PendingValuesShownWhileDrawing Show(Pawn pawn)
     {
-        var shown = new PendingAssignmentsShownWhileDrawing();
+        var shown = new PendingValuesShownWhileDrawing();
 
         if (pawn.foodRestriction is { } foodTracker)
-            shown.ShowPendingPolicy(foodTracker, PendingAssignments.FoodPolicy,
+            shown.ShowPendingValue(foodTracker, PendingAssignments.FoodPolicy,
                 () => foodTracker.curPolicy, policy => foodTracker.curPolicy = policy);
 
         if (pawn.outfits is { } outfitTracker)
-            shown.ShowPendingPolicy(outfitTracker, PendingAssignments.ApparelPolicy,
+            shown.ShowPendingValue(outfitTracker, PendingAssignments.ApparelPolicy,
                 () => outfitTracker.curApparelPolicy, policy => outfitTracker.curApparelPolicy = policy);
 
         if (pawn.drugs is { } drugTracker)
-            shown.ShowPendingPolicy(drugTracker, PendingAssignments.DrugPolicy,
+            shown.ShowPendingValue(drugTracker, PendingAssignments.DrugPolicy,
                 () => drugTracker.curPolicy, policy => drugTracker.curPolicy = policy);
 
         if (pawn.reading is { } readingTracker)
-            shown.ShowPendingPolicy(readingTracker, PendingAssignments.ReadingPolicy,
+            shown.ShowPendingValue(readingTracker, PendingAssignments.ReadingPolicy,
                 () => readingTracker.curPolicy, policy => readingTracker.curPolicy = policy);
 
-        shown.ShowPendingAllowedAreaOf(pawn);
+        ShowPendingAllowedAreaOf(pawn, shown);
 
         return shown;
-    }
-
-    public void RestoreRealAssignments()
-    {
-        for (int restoreIndex = restoreRealValues.Count - 1; restoreIndex >= 0; restoreIndex--)
-            restoreRealValues[restoreIndex]();
-
-        restoreRealValues.Clear();
     }
 
     public static bool TryGetPendingAllowedAreaWhileDrawing(Pawn_PlayerSettings playerSettings, out Area pendingArea)
@@ -141,23 +133,10 @@ sealed class PendingAssignmentsShownWhileDrawing
         return PendingOrderRegistry.TryGetPendingValue(playerSettings, PendingAssignments.AllowedArea, out pendingArea);
     }
 
-    private static Pawn pawnWithPendingAllowedAreaShown;
-
-    private void ShowPendingPolicy<TPolicy>(object tracker, string valueName, Func<TPolicy> readPolicy, Action<TPolicy> writePolicy)
-        where TPolicy : Policy
-    {
-        if (!PendingOrderRegistry.TryGetPendingValue(tracker, valueName, out TPolicy pendingPolicy)) return;
-        if (pendingPolicy == null) return;
-
-        var realPolicy = readPolicy();
-        writePolicy(pendingPolicy);
-        restoreRealValues.Add(() => writePolicy(realPolicy));
-    }
-
-    private void ShowPendingAllowedAreaOf(Pawn pawn)
+    private static void ShowPendingAllowedAreaOf(Pawn pawn, PendingValuesShownWhileDrawing shown)
     {
         var previouslyShownPawn = pawnWithPendingAllowedAreaShown;
         pawnWithPendingAllowedAreaShown = pawn;
-        restoreRealValues.Add(() => pawnWithPendingAllowedAreaShown = previouslyShownPawn);
+        shown.RestoreAfterDrawing(() => pawnWithPendingAllowedAreaShown = previouslyShownPawn);
     }
 }
