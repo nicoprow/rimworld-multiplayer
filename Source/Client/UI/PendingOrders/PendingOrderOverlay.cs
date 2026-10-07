@@ -17,7 +17,7 @@ internal abstract class PendingOrderOverlay(Map map)
     public abstract void Draw();
 }
 
-internal sealed class PendingValueOverride(Map map, object target, string valueName, object pendingValue)
+internal class PendingValueOverride(Map map, object target, string valueName, object pendingValue)
     : PendingOrderOverlay(map)
 {
     public readonly object pendingValue = pendingValue;
@@ -27,6 +27,41 @@ internal sealed class PendingValueOverride(Map map, object target, string valueN
 
     public override void Draw()
     {
+    }
+}
+
+internal sealed class PendingForbiddenState(Map map, CompForbiddable forbiddable, bool pendingForbidden)
+    : PendingValueOverride(map, forbiddable, PendingToggleValues.Forbidden, pendingForbidden)
+{
+    private const OverlayTypes ForbiddenOverlayTypes =
+        OverlayTypes.Forbidden | OverlayTypes.ForbiddenBig | OverlayTypes.ForbiddenRefuel | OverlayTypes.ForbiddenAtomizer;
+
+    public override void Draw()
+    {
+        var forbiddableThing = forbiddable.parent;
+        if (!forbiddableThing.Spawned || forbiddableThing.Map != map) return;
+
+        map.overlayDrawer.DrawOverlay(forbiddableThing, OverlayTypes.None);
+    }
+
+    public static OverlayTypes OverlayTypesShowing(bool forbidden, OverlayTypes overlayTypes, CompForbiddable forbiddable)
+    {
+        bool showsForbidden = (overlayTypes & ForbiddenOverlayTypes) != 0;
+
+        if (forbidden && !showsForbidden)
+            return overlayTypes | forbiddable.MyOverlayType;
+
+        if (!forbidden && showsForbidden)
+            return WithoutForbiddenOverlays(overlayTypes);
+
+        return overlayTypes;
+    }
+
+    private static OverlayTypes WithoutForbiddenOverlays(OverlayTypes overlayTypes)
+    {
+        bool showedForbiddenOutOfFuel = (overlayTypes & OverlayTypes.ForbiddenRefuel) != 0;
+        var withoutForbidden = overlayTypes & ~ForbiddenOverlayTypes;
+        return showedForbiddenOutOfFuel ? withoutForbidden | OverlayTypes.OutOfFuel : withoutForbidden;
     }
 }
 
