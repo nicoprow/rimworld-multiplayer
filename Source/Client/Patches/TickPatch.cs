@@ -102,7 +102,7 @@ namespace Multiplayer.Client
 
             if (Time.time - frameTimeSentAt > 32f/1000f)
             {
-                Multiplayer.Client.Send(new ClientFrameTimePacket(avgFrameTime));
+                Multiplayer.Client.Send(new ClientFrameTimePacket(avgFrameTime), reliable: false);
                 frameTimeSentAt = Time.time;
             }
 
