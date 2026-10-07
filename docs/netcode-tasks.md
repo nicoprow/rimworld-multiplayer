@@ -205,7 +205,8 @@ No lost, doubled or misordered commands, and no desync. Playing felt much smooth
 - Overlays so far:
   - designators with a `Designation` def (mine, cut, harvest, hunt, deconstruct, ...): the faded designation icon at the cells or on the thing
   - `Designator_Place` (build, install): a blue ghost of the thing with the chosen rotation and stuff
-  - all other cell designators (zones, areas, plans, cancel): the cell outline
+  - designators without a designation (cancel and other removals): the faded designator icon on every thing that `CanDesignateThing` accepts and, for `Designator_Cancel`, on cells with cancelable cell designations
+  - all other cell designators (zones, areas, plans): the cell outline
   - drafted moves (`FloatMenuOptionProvider_DraftedMove.PawnGotoAction`) and every ordered job (`Pawn_JobTracker.TryTakeOrderedJob` and `TryTakeOrderedJobPrioritizedWork`, such as picking up, eating, equipping or rescuing): a line from the pawn to the target and a target highlight (`PawnTargetOverlay`). Sync methods are intercepted by a transpiler inside the method body, so a Harmony prefix on them runs before the command is sent.
 
 **Remaining work:**
