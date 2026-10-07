@@ -21,13 +21,28 @@ internal class PendingValueOverride(Map map, object target, string valueName, ob
     : PendingOrderOverlay(map)
 {
     public readonly object pendingValue = pendingValue;
+    public readonly string valueName = valueName;
 
-    public bool Overrides(object candidateTarget, string candidateValueName) =>
+    public virtual IEnumerable<object> Targets
+    {
+        get { yield return target; }
+    }
+
+    public virtual bool Overrides(object candidateTarget, string candidateValueName) =>
         ReferenceEquals(target, candidateTarget) && valueName == candidateValueName;
 
     public override void Draw()
     {
     }
+}
+
+internal sealed class PendingValueOverrideForEach(Map map, List<object> targets, string valueName, object pendingValue)
+    : PendingValueOverride(map, null, valueName, pendingValue)
+{
+    public override IEnumerable<object> Targets => targets;
+
+    public override bool Overrides(object candidateTarget, string candidateValueName) =>
+        valueName == candidateValueName && targets.Any(target => ReferenceEquals(target, candidateTarget));
 }
 
 internal sealed class PendingForbiddenState(Map map, CompForbiddable forbiddable, bool pendingForbidden)

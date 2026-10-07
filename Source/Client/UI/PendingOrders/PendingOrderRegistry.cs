@@ -68,6 +68,26 @@ internal static class PendingOrderRegistry
         return false;
     }
 
+    public static List<object> TargetsWithPendingValue(string valueName)
+    {
+        var targets = new List<object>();
+        foreach (var order in ordersAwaitingExecution)
+            if (order.overlay is PendingValueOverride valueOverride && valueOverride.valueName == valueName)
+                targets.AddRange(valueOverride.Targets);
+
+        return targets;
+    }
+
+    public static List<PendingValueOverride> PendingValueOverridesInSendOrder(object target, string valueName)
+    {
+        var overrides = new List<PendingValueOverride>();
+        foreach (var order in ordersAwaitingExecution)
+            if (order.overlay is PendingValueOverride valueOverride && valueOverride.Overrides(target, valueName))
+                overrides.Add(valueOverride);
+
+        return overrides;
+    }
+
     public static void DrawOrdersOn(Map map)
     {
         RemoveExpiredOrders();

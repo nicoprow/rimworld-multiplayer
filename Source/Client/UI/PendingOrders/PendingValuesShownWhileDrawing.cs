@@ -8,15 +8,23 @@ sealed class PendingValuesShownWhileDrawing
     private readonly List<Action> restoreRealValues = new();
 
     public static bool ShouldShowPendingValues() =>
-        Multiplayer.Client != null && !TickPatch.Simulating && PendingOrderRegistry.Count > 0;
+        Multiplayer.InInterface && !TickPatch.Simulating && PendingOrderRegistry.Count > 0;
 
-    public void ShowPendingValue<T>(object target, string valueName, Func<T> readRealValue, Action<T> writeValue)
+    public void ShowPendingValue<T>(object target, string valueName, Func<T> readValue, Action<T> writeValue)
     {
         if (!PendingOrderRegistry.TryGetPendingValue(target, valueName, out T pendingValue)) return;
 
-        var realValue = readRealValue();
+        var realValue = readValue();
         writeValue(pendingValue);
-        RestoreAfterDrawing(() => writeValue(realValue));
+        RestoreAfterDrawing(() => RestoreIfStillShowing(pendingValue, realValue, readValue, writeValue));
+    }
+
+    private static void RestoreIfStillShowing<T>(T pendingValue, T realValue, Func<T> readValue, Action<T> writeValue)
+    {
+        bool valueChangedWhileDrawing = !EqualityComparer<T>.Default.Equals(readValue(), pendingValue);
+        if (valueChangedWhileDrawing) return;
+
+        writeValue(realValue);
     }
 
     public void RestoreAfterDrawing(Action restoreRealValue)
