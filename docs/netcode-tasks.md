@@ -8,7 +8,7 @@ Status values: `todo`, `research`, `in progress`, `done`, `dropped`.
 
 ## 1. Testing setup and metrics
 
-**Status:** in progress
+**Status:** done
 
 **Goal:** a repeatable bad-network setup (reference: 500 ms ±100 ms jitter, 5% loss), plus measurements of every later change against it.
 
@@ -36,10 +36,23 @@ Status values: `todo`, `research`, `in progress`, `done`, `dropped`.
   - command latency: from sending until the command executes locally
 - `PerformanceRecorder` writes these metrics to a "NETWORK CONDITIONS" section of `MpPerf-*.txt`, with P95 and P99 for every metric. `SyncDebugPanel` shows them live in a "NETWORK CONDITIONS" section.
 
-**Remaining work:**
-- Run the reference condition in game and record baseline numbers here: buffer, stalls, command round trip and latency, with and without the relay.
+**Baseline** (client side, `New Arrivals1`, mixed game speeds, mod at `70ce34c`):
+
+| Metric | Reference relay (44 s) | No relay (28 s) |
+|---|---|---|
+| Buffer depth, ticks (avg / P95 / max) | 7.2 / 33 / 52 | 3.3 / 5 / 11 |
+| Stalls | 15, 2.56 s total, 5.8% of the time | 0 |
+| Stall duration, ms (avg / max) | 170 / 818 | – |
+| Command round trip, ms (min / avg / max) | 503 / 1176 / 2065 | 22 / 44 / 98 |
+| Command latency to execution, ms (min / avg / max) | 599 / 1345 / 2087 | 113 / 133 / 232 |
+| Ticks per frame (avg) | 0.90 | 0.94 |
+| TPS performance (avg) | 92% | 95% |
+
+Both runs are short, with fewer than 30 command samples each, so the P95 and P99 values are not reliable yet. Use runs of several minutes when comparing later changes.
 
 **Findings:**
+- **Command round trip under loss is far above the configured delay.** The minimum (503 ms) matches 2 × 250 ms, but the average is 2.3 times that and the maximum about 4 times. This fits retransmits on the reliable channel holding back every later reliable packet until the lost one is resent. Task 2 checks this in detail.
+- **Executing a command takes about 90 ms (5 ticks) longer than its round trip without the relay, and about 170 ms with it.** That is the time a command waits in the tick buffer.
 - **Clients run at most one timer tick per frame.** Outside replays and simulation, `TickPatch.Prefix` sets `ticksToRun = 1`. The 0.8× "speed up" therefore can't exceed the frame rate, and a client that has fallen behind catches up slowly instead of in bursts. Relevant for tasks 3 and 4.
 - **LiteNetLib simulation doesn't work in our build.**
   - In 1.3.1, `SimulatePacketLoss`, `SimulateLatency` and the related fields are public and can be set.
