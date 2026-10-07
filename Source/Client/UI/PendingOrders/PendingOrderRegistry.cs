@@ -47,11 +47,19 @@ internal static class PendingOrderRegistry
     {
         for (int orderIndex = ordersAwaitingExecution.Count - 1; orderIndex >= 0; orderIndex--)
         {
-            if (ordersAwaitingExecution[orderIndex].overlay is PendingValueOverride valueOverride &&
-                valueOverride.Overrides(target, valueName) &&
-                valueOverride.pendingValue is T typedValue)
+            if (ordersAwaitingExecution[orderIndex].overlay is not PendingValueOverride valueOverride) continue;
+            if (!valueOverride.Overrides(target, valueName)) continue;
+
+            if (valueOverride.pendingValue is T typedValue)
             {
                 pendingValue = typedValue;
+                return true;
+            }
+
+            bool pendingValueIsNullReference = valueOverride.pendingValue == null && default(T) == null;
+            if (pendingValueIsNullReference)
+            {
+                pendingValue = default;
                 return true;
             }
         }
