@@ -8,21 +8,38 @@ Status values: `todo`, `research`, `in progress`, `done`, `dropped`.
 
 ## 1. Testing setup and metrics
 
-**Status:** todo
+**Status:** in progress
 
 **Goal:** a repeatable bad-network setup (reference: 500 ms ±100 ms jitter, 5% loss), plus measurements of every later change against it.
 
-**Work:**
-- Dev setup: link the repo into the RimWorld `Mods` folder (directory junction), and disable the Workshop version of the mod if it's subscribed.
-- Write a small UDP relay as a dev tool, e.g. a console project `Source/NetworkConditioner`. The client connects to the relay, which forwards to the server and applies per-packet delay with jitter, loss (random and bursty) and a fixed seed, separately for each direction.
-- Collect metrics on each client:
-  - command buffer depth over time (`tickUntil - Timer`). `PerformanceRecorder` already samples this as "timer lag" and reports average, min and max.
-  - stall count and duration (time spent with `Timer >= tickUntil`)
-  - ticks run per frame, to show catch-up bursts
-  - how long it takes from issuing a command until it runs locally
-- Add the new metrics to `PerformanceRecorder` (file output) and a new section in `SyncDebugPanel` (live view). Add percentiles (p95, p99), since averages hide stalls.
+**Done:**
+- Dev setup: the repo is linked into the RimWorld `Mods` folder (directory junction), and the Workshop version is disabled.
+- `Source/NetworkConditioner`: a UDP relay console app. Per direction it applies:
+  - delay
+  - uniform jitter, with order preserved unless `--reorder` is given
+  - random loss
+  - time-based loss bursts
+
+  It opens one socket per client towards the host and takes a fixed `--seed`. `--help` lists the options. The decision logic (`ImpairedLink`) is unit tested in `Source/Tests/NetworkConditionerTest.cs`.
+- `scripts/Start-NetcodeTest.ps1` starts the relay, a host instance and a client instance. The client gets its own data folder; the mod list is copied there on first run. The client auto-joins through the relay.
+  - The default is the reference profile: 250 ms ±50 ms and 2.5% loss per direction.
+  - `-HostSave <name or path>` hosts a multiplayer save (`.zip` in `MpReplays`) automatically. It passes `-mphostreplay` and the new `-mphostauto` flag, which runs the Host button straight away using the host settings saved in the mod (port, LAN, Steam). If hosting fails, the host window stays open. Singleplayer `.rws` saves aren't accepted; host them once and save them as a multiplayer save first.
+  - The client is only started once the host is listening on its port (checked with `Get-NetUDPEndpoint`), because the client's auto-join doesn't retry. `-ClientExtraDelaySeconds` adds a delay on top, and `-HostStartTimeoutSeconds` (default 300) sets how long to wait.
+  - Options: `-NoAutoConnect`, `-NoRelay`, `-NoHostInstance`, `-NoClientInstance` and the relay parameters.
+  - Test colony: `New Arrivals1` (5 MB singleplayer save). Use the same save for every baseline so numbers stay comparable.
+- `NetworkMetrics` (`Source/Client/UI/DebugPanel`) measures on each client:
+  - buffer depth (`tickUntil - Timer`) at the start of each frame
+  - stalls: count and duration of stretches where `Timer >= tickUntil`. Simulation catch-up, replays, server freezes and long events are excluded.
+  - timer ticks run per frame
+  - command round trip: from sending your own command until the server's copy arrives. It matches on type, map and data, so commands the server rejects don't throw the matching off.
+  - command latency: from sending until the command executes locally
+- `PerformanceRecorder` writes these metrics to a "NETWORK CONDITIONS" section of `MpPerf-*.txt`, with P95 and P99 for every metric. `SyncDebugPanel` shows them live in a "NETWORK CONDITIONS" section.
+
+**Remaining work:**
+- Run the reference condition in game and record baseline numbers here: buffer, stalls, command round trip and latency, with and without the relay.
 
 **Findings:**
+- **Clients run at most one timer tick per frame.** Outside replays and simulation, `TickPatch.Prefix` sets `ticksToRun = 1`. The 0.8× "speed up" therefore can't exceed the frame rate, and a client that has fallen behind catches up slowly instead of in bursts. Relevant for tasks 3 and 4.
 - **LiteNetLib simulation doesn't work in our build.**
   - In 1.3.1, `SimulatePacketLoss`, `SimulateLatency` and the related fields are public and can be set.
   - However, the methods that apply them (`HandleSimulateLatency`, `HandleSimulatePacketLoss`, `ProcessDelayedPackets`) are marked `[Conditional("DEBUG")]`. The NuGet DLL is a release build, so the compiler removed every call to them, which I confirmed by scanning the IL. Setting the flags has no effect and gives no error.
