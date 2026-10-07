@@ -49,7 +49,7 @@ static class ShowPendingWorkPriorityWhileDrawing
     static void Prefix(Pawn p, WorkTypeDef wType, out PendingValuesShownWhileDrawing __state)
     {
         __state = null;
-        if (!PendingWorkValues.ShouldShowPendingValues()) return;
+        if (!PendingValuesShownWhileDrawing.ShouldShowPendingValues()) return;
         if (p.workSettings is not { } workSettings || wType == null) return;
 
         __state = new PendingValuesShownWhileDrawing();
@@ -70,7 +70,7 @@ static class ShowPendingTimeAssignmentsWhileDrawing
     static void Prefix(Pawn pawn, out PendingValuesShownWhileDrawing __state)
     {
         __state = null;
-        if (!PendingWorkValues.ShouldShowPendingValues()) return;
+        if (!PendingValuesShownWhileDrawing.ShouldShowPendingValues()) return;
         if (pawn.timetable is not { } timetable) return;
 
         __state = new PendingValuesShownWhileDrawing();
@@ -93,9 +93,6 @@ static class PendingWorkValues
 {
     private static readonly Dictionary<WorkTypeDef, string> priorityNames = new();
     private static readonly string[] assignmentNames = CreateAssignmentNames();
-
-    public static bool ShouldShowPendingValues() =>
-        Multiplayer.Client != null && !TickPatch.Simulating && PendingOrderRegistry.Count > 0;
 
     public static bool IsHourOfDay(int hour) => hour >= 0 && hour < GenDate.HoursPerDay;
 

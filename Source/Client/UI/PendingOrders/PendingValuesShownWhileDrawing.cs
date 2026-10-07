@@ -7,6 +7,9 @@ sealed class PendingValuesShownWhileDrawing
 {
     private readonly List<Action> restoreRealValues = new();
 
+    public static bool ShouldShowPendingValues() =>
+        Multiplayer.Client != null && !TickPatch.Simulating && PendingOrderRegistry.Count > 0;
+
     public void ShowPendingValue<T>(object target, string valueName, Func<T> readRealValue, Action<T> writeValue)
     {
         if (!PendingOrderRegistry.TryGetPendingValue(target, valueName, out T pendingValue)) return;

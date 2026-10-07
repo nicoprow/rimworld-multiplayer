@@ -52,8 +52,7 @@ static class ShowPendingAssignmentsWhileDrawing
     static void Prefix(Pawn pawn, out PendingValuesShownWhileDrawing __state)
     {
         __state = null;
-        if (Multiplayer.Client == null || TickPatch.Simulating) return;
-        if (PendingOrderRegistry.Count == 0) return;
+        if (!PendingValuesShownWhileDrawing.ShouldShowPendingValues()) return;
 
         __state = PendingAssignmentsShownWhileDrawing.Show(pawn);
     }
