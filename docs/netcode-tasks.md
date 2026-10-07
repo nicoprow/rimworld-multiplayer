@@ -193,24 +193,33 @@ No lost, doubled or misordered commands, and no desync. Playing felt much smooth
 
 ## 5. Latency hiding for common orders
 
-**Status:** todo
+**Status:** in progress
 
 **Goal:** a player's own orders appear instantly, even at 500 ms ping.
 
-**Work:**
-- A speculative display layer drawn on top of the real game state, never mixed into it:
-  - designations and blueprints
-  - move targets for drafted pawns
-  - zone and area painting
-  - changes to bills and settings in open windows
-- Remove each speculative entry when its confirmed command runs, or when it times out.
+**Done:**
+- `PendingOrderRegistry` (`Source/Client/UI/PendingOrders`) keeps one `PendingOrderOverlay` per own command that hasn't run yet.
+  - Before sending, the UI code calls `AttachToNextOwnCommand(overlay)`. `Extensions.SendCommand` hands the overlay to the next own command and records its type, map and data (`OwnCommandSignature`, shared with `NetworkMetrics`).
+  - `TickPatch.RunCmds` removes the overlay when the matching own command runs. That is the same frame in which the real designation or blueprint appears. Overlays also expire 10 s after sending, which covers commands the server rejects.
+  - Overlays are drawn in a postfix on `MapInterface.MapInterfaceUpdate`, only for the current map and not while simulating. They only read game state.
+- Overlays so far:
+  - designators with a `Designation` def (mine, cut, harvest, hunt, deconstruct, ...): the faded designation icon at the cells or on the thing
+  - `Designator_Place` (build, install): a blue ghost of the thing with the chosen rotation and stuff
+  - all other cell designators (zones, areas, plans, cancel): the cell outline
+  - drafted moves (`FloatMenuOptionProvider_DraftedMove.PawnGotoAction`): a line from the pawn to the destination and a target highlight
 
-**Research needed:**
-- How sync methods and fields send commands today (`SyncHandlers`, `Sync` attributes, the MultiplayerAPI). Find a central place to record pending local commands.
-- How RimWorld draws designations, blueprints, zones and pawn paths, so speculative versions can use the same drawing code without touching game state.
-- Which actions are frequent enough to matter. Start with designations and draft moves.
-- How the mod already treats UI-only state that is never synced.
-- Factorio FFF #83 / #302 for edge cases (ordering, actions that depend on each other).
+**Remaining work:**
+- Test in game with the relay: check every overlay type, and that nothing stays behind after its command ran.
+- Toggles that read game state directly still show the old state until the command runs: drafting, forbidding, and checkboxes in windows.
+  - Unbuffered sync fields send immediately and restore the field at once, so the checkbox flips back until the command arrives. These could get the same pending display as buffered fields, without the 200 ms delay.
+  - Sync methods such as `Pawn_DraftController.Drafted` would need a UI-only override of the getter, which is riskier. Check which ones matter most.
+- Edge case: orders that depend on a pending one (for example a move right after drafting). The server keeps the per-player order, so they run correctly; only the display may be briefly wrong.
+
+**Findings:**
+- **Commands are sent from a few places.** Designators go through `DesignatorPatches` (`CommandType.Designator`). Sync methods, sync fields and sync delegates go through `SyncHandler.SendSyncCommand` (`CommandType.Sync`). Everything ends in `Extensions.SendCommand`, which is the central place to attach pending state.
+- **Buffered sync fields already hide latency.** `SyncFieldUtil` keeps the locally changed value of fields with `SetBufferChanges()` and shows it until the server's command has applied it. It sends the change after 200 ms without further edits. Unbuffered fields restore the old value straight away and show the new one only once the command has run.
+- **Drawing APIs** (1.6): `Designator.Designation` (a `DesignationDef` with `iconMat`), `FadedMaterialPool.FadedVersionOf`, `GhostDrawer.DrawGhostThing`, `GenDraw.DrawFieldEdges`, `GenDraw.DrawLineBetween` and `GenDraw.DrawTargetHighlight`. Assembly-CSharp is publicized, so protected members such as `Designation` are accessible.
+- **Overlays draw meshes directly instead of creating flecks or motes.** Those live in the map's managers, and their lifetime can't be tied to a pending command. The existing goto fleck appears only once the own command runs.
 
 ---
 
