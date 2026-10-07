@@ -17,6 +17,19 @@ internal abstract class PendingOrderOverlay(Map map)
     public abstract void Draw();
 }
 
+internal sealed class PendingValueOverride(Map map, object target, string valueName, object pendingValue)
+    : PendingOrderOverlay(map)
+{
+    public readonly object pendingValue = pendingValue;
+
+    public bool Overrides(object candidateTarget, string candidateValueName) =>
+        ReferenceEquals(target, candidateTarget) && valueName == candidateValueName;
+
+    public override void Draw()
+    {
+    }
+}
+
 internal sealed class DesignationIconsOverlay(Map map, Material icon, List<Vector3> iconPositions) : PendingOrderOverlay(map)
 {
     private readonly Material fadedIcon = FadedMaterialPool.FadedVersionOf(icon, PendingOpacity);

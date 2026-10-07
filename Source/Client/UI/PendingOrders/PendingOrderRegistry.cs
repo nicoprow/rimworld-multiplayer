@@ -43,6 +43,23 @@ internal static class PendingOrderRegistry
             ordersAwaitingExecution.RemoveAt(executedOrderIndex);
     }
 
+    public static bool TryGetPendingValue<T>(object target, string valueName, out T pendingValue)
+    {
+        for (int orderIndex = ordersAwaitingExecution.Count - 1; orderIndex >= 0; orderIndex--)
+        {
+            if (ordersAwaitingExecution[orderIndex].overlay is PendingValueOverride valueOverride &&
+                valueOverride.Overrides(target, valueName) &&
+                valueOverride.pendingValue is T typedValue)
+            {
+                pendingValue = typedValue;
+                return true;
+            }
+        }
+
+        pendingValue = default;
+        return false;
+    }
+
     public static void DrawOrdersOn(Map map)
     {
         RemoveExpiredOrders();
@@ -61,7 +78,7 @@ internal static class PendingOrderRegistry
     private static void RemoveExpiredOrders()
     {
         float expiryCutoff = Time.realtimeSinceStartup - ExpiryAfterSendSeconds;
-        ordersAwaitingExecution.RemoveAll(order => order.sentAt < expiryCutoff || order.overlay.map?.Disposed != false);
+        ordersAwaitingExecution.RemoveAll(order => order.sentAt < expiryCutoff || order.overlay.map is { Disposed: true });
     }
 
     private sealed class PendingOrder(OwnCommandSignature signature, PendingOrderOverlay overlay, float sentAt)
