@@ -207,19 +207,21 @@ No lost, doubled or misordered commands, and no desync. Playing felt much smooth
   - `Designator_Place` (build, install): a blue ghost of the thing with the chosen rotation and stuff
   - designators without a designation (cancel and other removals): the faded designator icon on every thing that `CanDesignateThing` accepts and, for `Designator_Cancel`, on cells with cancelable cell designations
   - all other cell designators (zones, areas, plans): the cell outline
+  - drafting: setting `Pawn_DraftController.Drafted` from the interface records a `PendingValueOverride`. The draft button (`Command_Toggle` with the `Command_ColonistDraft` hotkey) shows the pending state, and a second click while it is pending toggles from the shown state. The colonist bar and the pawn's drawn pose still change only when the command runs.
   - drafted moves (`FloatMenuOptionProvider_DraftedMove.PawnGotoAction`) and every ordered job (`Pawn_JobTracker.TryTakeOrderedJob` and `TryTakeOrderedJobPrioritizedWork`, such as picking up, eating, equipping or rescuing): a line from the pawn to the target and a target highlight (`PawnTargetOverlay`). Sync methods are intercepted by a transpiler inside the method body, so a Harmony prefix on them runs before the command is sent.
 
 **Remaining work:**
 - Test in game with the relay: check every overlay type, and that nothing stays behind after its command ran.
-- Toggles that read game state directly still show the old state until the command runs: drafting, forbidding, and checkboxes in windows.
+- Other toggles still show the old state until the command runs: forbidding, fire at will, and checkboxes in windows.
   - Unbuffered sync fields send immediately and restore the field at once, so the checkbox flips back until the command arrives. These could get the same pending display as buffered fields, without the 200 ms delay.
-  - Sync methods such as `Pawn_DraftController.Drafted` would need a UI-only override of the getter, which is riskier. Check which ones matter most.
+  - Toggles that are sync methods need the same treatment as drafting: record the value in the setter's prefix and patch the gizmo, not the getter.
 - Edge case: orders that depend on a pending one (for example a move right after drafting). The server keeps the per-player order, so they run correctly; only the display may be briefly wrong.
 
 **Findings:**
 - **Commands are sent from a few places.** Designators go through `DesignatorPatches` (`CommandType.Designator`). Sync methods, sync fields and sync delegates go through `SyncHandler.SendSyncCommand` (`CommandType.Sync`). Everything ends in `Extensions.SendCommand`, which is the central place to attach pending state.
 - **Buffered sync fields already hide latency.** `SyncFieldUtil` keeps the locally changed value of fields with `SetBufferChanges()` and shows it until the server's command has applied it. It sends the change after 200 ms without further edits. Unbuffered fields restore the old value straight away and show the new one only once the command has run.
 - **Drawing APIs** (1.6): `Designator.Designation` (a `DesignationDef` with `iconMat`), `FadedMaterialPool.FadedVersionOf`, `GhostDrawer.DrawGhostThing`, `GenDraw.DrawFieldEdges`, `GenDraw.DrawLineBetween` and `GenDraw.DrawTargetHighlight`. Assembly-CSharp is publicized, so protected members such as `Designation` are accessible.
+- **Tiny getters can't be patched reliably.** `Pawn_DraftController.get_Drafted` is 7 bytes of IL, and Mono can inline such methods into their callers, which then ignore a Harmony patch. Pending states are therefore shown by patching the places that display them (gizmos), not the getter.
 - **Overlays draw meshes directly instead of creating flecks or motes.** Those live in the map's managers, and their lifetime can't be tied to a pending command. The existing goto fleck appears only once the own command runs.
 
 ---
