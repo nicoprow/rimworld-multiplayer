@@ -111,6 +111,9 @@ Both runs are short, with fewer than 30 command samples each, so the P95 and P99
   - `DisconnectTimeout` is the default 5000 ms; we don't set it.
 - **Our own fragmentation allows only one fragmented packet at a time per connection** (`ConnectionBase.MaxFragmentedPackets = 1`, more throws `PacketReadException`). This works today only because everything arrives in one ordered stream. With more than one channel, two fragmented packets (for example world data and a sync opinion) would interleave, so fragment state has to be kept per channel.
 - **Steam** uses the old `SteamNetworking` P2P API. It already uses the channel number to tell connections apart (each client picks a random receive channel), sends reliable or unreliable, and allows about 1200 bytes per unreliable packet. Separate reliable channels would need more channel numbers per connection. Redundant commands in unreliable packets don't depend on channels, so they help Steam too.
+  - On Steam, everything above our own code is different: LiteNetLib isn't involved, so its resend timing doesn't apply. Valve doesn't document how the old P2P API times its resends. The newer `ISteamNetworkingSockets` uses an ack scheme modelled on QUIC, but it isn't confirmed that the old API runs on top of it.
+  - Our own code behaves the same on both: one ordered reliable stream per connection, frame time sent reliably, sync opinions fragmented, and the same gate on the client. Head-of-line blocking therefore exists on Steam too. How long each blockage lasts is unknown.
+  - The relay can't sit between two Steam peers. `NetworkMetrics` measures in the game rather than in the transport, so recordings from real Steam sessions are comparable with the relay baseline.
 - **Protocol:** `MpVersion.Protocol` is 54. Any of these changes needs a bump. Client and server must have the same version, so old clients can't connect.
 
 **Open questions:**
