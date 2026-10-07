@@ -112,8 +112,19 @@ No lost, doubled or misordered commands, and no desync. Playing felt much smooth
 - Find the cause of the remaining outliers (round trip up to 1331 ms, one 568 ms stall). The host's log of that run was lost; the script now writes separate logs (`Player-Host.log` in the main data folder, `Player.log` in the client data folder).
 - Record a real Steam session before and after (both players need the same build).
 - Measure how big commands and sync opinions are in practice.
-- Decide whether separate LiteNetLib channels are still worth it once redundancy is measured. Everything else reliable (sync opinions, chat, selections) still shares one ordered stream.
+- If large commands turn out to be common, raise the redundancy budget or split a command across several redundant packets.
+- If late unfreezes become noticeable, put the freeze state into `ServerTimeControlPacket`. `ServerFreezePacket` is reliable, so a lost one unfreezes clients about a second late.
 - Raise disconnect timeouts so they survive several seconds of loss bursts (LiteNetLib `DisconnectTimeout` is the default 5000 ms).
+
+**Decision: no separate channels for now.**
+- Commands, time control and frame times no longer depend on the reliable stream, so channels wouldn't change how the game feels.
+- What would still benefit:
+  - commands too large for the redundancy budget
+  - freeze and unfreeze
+  - chat, selections, pings and the player list
+- Channels don't raise throughput. The window of 64 packets and the resend delay apply to each channel separately, so the slow world download would stay slow.
+- Cost: fragment state per channel, another protocol bump, and a separate solution for Steam.
+- The targeted fixes for large commands and freeze delays are under remaining work.
 
 **Findings:**
 - **One ordered stream carries all reliable traffic.** `ConnectionBase.Send` takes only a `reliable` flag. `LiteNetConnection.SendRaw` maps it to `ReliableOrdered` or `Unreliable`, always on channel 0, and the server's `NetManager`s use the default `ChannelsCount` of 1. A lost packet therefore holds back every reliable packet sent after it, whatever its type.
